@@ -54,41 +54,21 @@ community support**.
 | ![ariac_pick.jpg](imgs/ariac_pick.jpg)`ARIACPick-v0` | ROS | | | |  |
 
 ## Installation
-Refer to [INSTALL.md](INSTALL.md)
+Refer to [https://github.com/pulver22/gym-gazebo/wiki/Installation](Wiki Installation Page)
 
 ## Usage
 
-### Build and install gym-gazebo
-
-In the root directory of the repository:
-
-```bash
-sudo pip install -e .
-```
-
 ### Running an environment
 
-- Load the environment variables corresponding to the robot you want to launch. E.g. to load the Turtlebot:
+Refer to [https://github.com/pulver22/gym-gazebo/wiki/Testing-installation](Wiki Testing page)
 
-```bash
-cd gym_gazebo/envs/installation
-bash turtlebot_setup.bash
-```
-
-Note: all the setup scripts are available in `gym_gazebo/envs/installation`
-
-- Run any of the examples available in `examples/`. E.g.:
-
-```bash
-cd examples/turtlebot
-python circuit2_turtlebot_lidar_qlearn.py
-```
 
 ### Display the simulation
 
 To see what's going on in Gazebo during a simulation, simply run gazebo client:
 
-```bash
+```
+bash
 gzclient
 ```
 
@@ -96,7 +76,8 @@ gzclient
 
 Display a graph showing the current reward history by running the following script:
 
-```bash
+```
+bash
 cd examples/utilities
 python display_plot.py
 ```
