@@ -4,14 +4,14 @@ repositories:
 #    url: https://github.com/erlerobot/ardupilot_sitl_gazebo_plugin
 #
 #    version: master
-#  ar_track_alvar:
-#    type: git
-#    url: https://github.com/sniekum/ar_track_alvar
-#    version: indigo-devel
+  ar_track_alvar:
+    type: git
+    url: https://github.com/sniekum/ar_track_alvar
+    version: kinetic-devel
 #  ar_track_alvar_msgs:
 #    type: git
 #    url: https://github.com/sniekum/ar_track_alvar_msgs
-#    version: indigo-devel
+#    version: kinetic-devel
   catkin_simple:
     type: git
     url: https://github.com/catkin/catkin_simple.git
@@ -27,11 +27,11 @@ repositories:
   ecl_core:
     type: git
     url: https://github.com/stonier/ecl_core
-    version: devel
+    version: release/0.61-indigo-kinetic
   ecl_lite:
     type: git
     url: https://github.com/stonier/ecl_lite
-    version: devel
+    version: release/0.61-indigo-kinetic
   ecl_navigation:
     type: git
     url: https://github.com/stonier/ecl_navigation
@@ -39,7 +39,7 @@ repositories:
   ecl_tools:
     type: git
     url: https://github.com/stonier/ecl_tools
-    version: devel
+    version: release/0.61-indigo-kinetic
   driver_base:
     type: git
     url: https://github.com/ros-drivers/driver_common.git
@@ -84,10 +84,10 @@ repositories:
 #    type: git
 #    url: https://github.com/erlerobot/mavros.git
 #    version: gazebo_udp
-#  mav_comm:
-#    type: git
-#    url: https://github.com/PX4/mav_comm.git
-#    version: master
+  mav_comm:
+    type: git
+    url: https://github.com/ethz-asl/mav_comm.git
+    version: master
   navigation:
     type: git
     url: https://github.com/ros-planning/navigation
@@ -144,6 +144,10 @@ repositories:
     type: git
     url: https://github.com/turtlebot/turtlebot_simulator
     version: indigo
+  vision_opencv:
+    type: git
+    url: https://github.com/ros-perception/vision_opencv
+    version: kinetic
   xacro:
     type: git
     url: https://github.com/ros/xacro
