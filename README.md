@@ -54,13 +54,13 @@ community support**.
 | ![ariac_pick.jpg](imgs/ariac_pick.jpg)`ARIACPick-v0` | ROS | | | |  |
 
 ## Installation
-Refer to [https://github.com/pulver22/gym-gazebo/wiki/Installation](Wiki Installation Page)
+Refer to [Wiki Installation Page](https://github.com/pulver22/gym-gazebo/wiki/Installation)
 
 ## Usage
 
 ### Running an environment
 
-Refer to [https://github.com/pulver22/gym-gazebo/wiki/Testing-installation](Wiki Testing page)
+Refer to [Wiki Testing page](https://github.com/pulver22/gym-gazebo/wiki/Testing-installation)
 
 
 ### Display the simulation
