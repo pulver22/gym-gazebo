@@ -32,8 +32,10 @@ class GazeboCircuitTurtlebotLidarEnv(gazebo_env.GazeboEnv):
         discretized_ranges = []
         min_range = 0.2
         done = False
+        # Normalise the lidar scan dividing their number by #new_ranges
         mod = len(data.ranges)/new_ranges
         for i, item in enumerate(data.ranges):
+            # discretized_ranges are less than the original laser readings
             if (i%mod==0):
                 if data.ranges[i] == float ('Inf'):
                     discretized_ranges.append(6)

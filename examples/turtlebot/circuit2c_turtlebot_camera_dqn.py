@@ -14,11 +14,12 @@ import os
 import json
 import random
 import numpy as np
+from gym import wrappers
 from keras.models import Sequential, load_model
-from keras.initializations import normal
+from keras.initializers import normal
 from keras import optimizers
 from keras.optimizers import RMSprop
-from keras.layers import Convolution2D, Flatten, ZeroPadding2D
+from keras.layers import Conv2D, Flatten, ZeroPadding2D
 from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
@@ -60,10 +61,10 @@ class DeepQ:
     def createModel(self):
         # Network structure must be directly changed here.
         model = Sequential()
-        model.add(Convolution2D(16, 3, 3, subsample=(2,2), input_shape=(img_channels,img_rows,img_cols)))
+        model.add(Conv2D(filters=16, kernel_size=(3, 3), strides=(2,2), data_format="channels_first", input_shape=(img_channels, img_rows,img_cols,)))
         model.add(Activation('relu'))
-        model.add(ZeroPadding2D((1, 1)))
-        model.add(Convolution2D(16, 3, 3, subsample=(2,2)))
+        model.add(ZeroPadding2D(padding=(1, 1)))
+        model.add(Conv2D(filters=16, kernel_size=(3, 3), strides=(2,2)))
         model.add(Activation('relu'))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
         model.add(Flatten())
@@ -72,7 +73,7 @@ class DeepQ:
         model.add(Dense(network_outputs))
         #adam = Adam(lr=self.learningRate)
         #model.compile(loss='mse',optimizer=adam)
-        model.compile(RMSprop(lr=self.learningRate), 'MSE')
+        model.compile(optimizer=RMSprop(lr=self.learningRate), loss='MSE')
         model.summary()
 
         return model
@@ -192,7 +193,7 @@ class DeepQ:
                 if isFinal:
                     X_batch = np.append(X_batch, newState.copy(), axis=0)
                     Y_batch = np.append(Y_batch, np.array([[reward]*self.output_size]), axis=0)
-            self.model.fit(X_batch, Y_batch, validation_split=0.2, batch_size = len(miniBatch), nb_epoch=1, verbose = 0)
+            self.model.fit(X_batch, Y_batch, validation_split=0.2, batch_size = len(miniBatch), epochs=1, verbose = 0)
 
     def saveModel(self, path):
         self.model.save(path)

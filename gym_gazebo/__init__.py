@@ -10,16 +10,19 @@ logger = logging.getLogger(__name__)
 register(
     id='GazeboMazeTurtlebotLidar-v0',
     entry_point='gym_gazebo.envs.turtlebot:GazeboMazeTurtlebotLidarEnv',
+    max_episode_steps=1000
     # More arguments here
 )
 register(
     id='GazeboCircuitTurtlebotLidar-v0',
     entry_point='gym_gazebo.envs.turtlebot:GazeboCircuitTurtlebotLidarEnv',
+    max_episode_steps=1000
     # More arguments here
 )
 register(
     id='GazeboCircuit2TurtlebotLidar-v0',
     entry_point='gym_gazebo.envs.turtlebot:GazeboCircuit2TurtlebotLidarEnv',
+    max_episode_steps=1000
     # More arguments here
 )
 register(

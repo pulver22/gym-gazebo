@@ -6,7 +6,8 @@ from keras.layers import Dense, Activation, LeakyReLU, Dropout
 from keras.models import load_model
 from keras.regularizers import l2
 
-from examples.turtlebot import memory
+#from examples.turtlebot 
+import memory
 
 
 class DeepQ:

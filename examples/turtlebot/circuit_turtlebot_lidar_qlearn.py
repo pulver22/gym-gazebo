@@ -41,6 +41,7 @@ if __name__ == '__main__':
     start_time = time.time()
     total_episodes = 10000
     highest_reward = 0
+    env._max_episode_steps = 500 # env returns done after _max_episode_steps
 
     for x in range(total_episodes):
         done = False
@@ -55,8 +56,9 @@ if __name__ == '__main__':
         #render() #defined above, not env.render()
 
         state = ''.join(map(str, observation))
-
-        for i in range(500):
+        i = 0
+        # run until env returns done
+        while not done:
 
             # Pick an action based on the current state
             action = qlearn.chooseAction(state)
