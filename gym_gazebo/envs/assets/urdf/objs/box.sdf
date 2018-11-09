@@ -1,0 +1,44 @@
+<?xml version='1.0'encoding="UTF-8"?>
+<sdf version="1.5">
+  <model name="box">
+    <pose>0 0 0 0 0 0</pose>
+    <!-- <static>true</static> -->
+    <link name="link_box">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.04243705701822916</ixx>
+          <iyy>0.04243705701822916</iyy>
+          <izz>0.04243705701822916</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision_box">
+        <geometry>
+          <box>
+            <size>0.067 0.067 0.067</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="visual_box">
+        <geometry>
+          <box>
+            <size>0.067 0.067 0.067</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 0 1</ambient>
+          <diffuse>1 1 0 1</diffuse>
+          <script>
+            <uri>model://Media/materials/scripts</uri>
+            <uri>model://Media/materials/textures</uri>
+            <name>Perlin</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,97 @@
+material NumCube
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture num_cube.png
+      }
+    }
+  }
+}
+
+material Chess
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture chess.png
+      }
+    }
+  }
+}
+
+material Gradient
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture gradient.jpg
+      }
+    }
+  }
+}
+
+material FlatWood
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture flat_wood.jpg
+      }
+    }
+  }
+}
+
+material Perlin
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture perlin.jpg
+      }
+    }
+  }
+}
+
+material Dirty
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture dirty.png
+      }
+    }
+  }
+}
+
+material Transparent
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture transparent.png
+      }
+    }
+  }
+}

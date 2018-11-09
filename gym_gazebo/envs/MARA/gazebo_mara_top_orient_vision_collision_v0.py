@@ -284,6 +284,8 @@ class GazeboMARATopOrientVisionCollisionv0Env(gazebo_env.GazeboEnv):
         # Seed the environment
         self._seed()
 
+        self.envs_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
     def collision_callback(self, message):
         """
         Callback method for the subscriber of Collision data
@@ -389,7 +391,7 @@ class GazeboMARATopOrientVisionCollisionv0Env(gazebo_env.GazeboEnv):
             # Open a file: file
             # os.chdir('../assets/urdf/rubik_cube')
             # print("os: ", os)
-            file = open('/home/rkojcev/devel/ros_rl/environments/gym-gazebo/gym_gazebo/envs/assets/urdf/rubik_cube/rubik_cube.sdf' ,mode='r')
+            file = open(self.envs_path + '/assets/urdf/objs/rubik_cube/rubik_cube.sdf' ,mode='r')
             # read all lines at once
             model_xml = file.read()
             # close the file

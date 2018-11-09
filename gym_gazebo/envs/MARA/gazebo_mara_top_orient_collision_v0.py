@@ -2,6 +2,7 @@ import gym
 import rospy
 import roslaunch
 import time
+import os
 import numpy as np
 from gym import utils, spaces
 from gym_gazebo.envs import gazebo_env
@@ -14,11 +15,12 @@ import copy
 import rospkg
 import threading # Used for time locks to synchronize position data.
 
-from gazebo_msgs.srv import SpawnModel, DeleteModel
+from gazebo_msgs.srv import SpawnModel, DeleteModel, SetModelState, SetLinkState, GetModelState
 
 from geometry_msgs.msg import Vector3
 from geometry_msgs.msg import WrenchStamped
 from gazebo_msgs.msg import ContactState
+from gazebo_msgs.msg import ModelState, LinkState
 
 from sensor_msgs.msg import CompressedImage
 # ROS Image message -> OpenCV2 image converter
@@ -29,6 +31,7 @@ from cv_bridge import CvBridge, CvBridgeError
 # from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # Used for publishing scara joint angles.
 # from control_msgs.msg import JointTrajectoryControllerState
 # from std_msgs.msg import String
+from std_msgs.msg import Empty as stdEmpty
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.msg import JointTrajectoryControllerState
@@ -38,7 +41,6 @@ from PyKDL import Jacobian, Chain, ChainJntToJacSolver, JntArray # For KDL Jacob
 import cv2
 
 import quaternion as quat
-
 
 # from custom baselines repository
 from baselines.agent.utility.general_utils import forward_kinematics, get_ee_points, rotation_from_matrix, \
@@ -114,8 +116,8 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # EE_ROT_TGT = np.asmatrix([[-0.99521107,  0.09689605, -0.01288708],
         #                           [-0.09768035, -0.99077857,  0.09389558],
         #                           [-0.00367013,  0.09470474,  0.99549864]])
-        EE_ROT_TGT = np.asmatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-        # EE_ROT_TGT = np.asmatrix([[0.79660969, -0.51571238,  0.31536287], [0.51531424,  0.85207952,  0.09171542], [-0.31601302,  0.08944959,  0.94452874]]) # original orientation
+        # EE_ROT_TGT = np.asmatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        EE_ROT_TGT = np.asmatrix([[0.79660969, -0.51571238,  0.31536287], [0.51531424,  0.85207952,  0.09171542], [-0.31601302,  0.08944959,  0.94452874]]) # original orientation
         EE_POINTS = np.asmatrix([[0, 0, 0]])
         EE_VELOCITIES = np.asmatrix([[0, 0, 0]])
         # Initial joint position
@@ -131,6 +133,11 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # Topics for the robot publisher and subscriber.
         JOINT_PUBLISHER = '/mara_controller/command'
         JOINT_SUBSCRIBER = '/mara_controller/state'
+        RAND_LIGHT_PUBLISHER = '/randomizers/randomizer/light'
+        RAND_SKY_PUBLISHER = '/randomizers/randomizer/sky'
+        RAND_PHYSICS_PUBLISHER = '/randomizers/randomizer/physics'
+        LINK_STATE_PUBLISHER = '/gazebo/set_link_state'
+        RAND_OBSTACLES_PUBLISHER = '/randomizers/randomizer/obstacles'
 
         # joint names:
         MOTOR1_JOINT = 'motor1'
@@ -206,8 +213,13 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # ROS 1 implementation
         self._pub = rospy.Publisher(JOINT_PUBLISHER, JointTrajectory)
         self._sub = rospy.Subscriber(JOINT_SUBSCRIBER, JointTrajectoryControllerState, self.observation_callback)
-
         self._sub_coll = rospy.Subscriber('/gazebo_contacts',ContactState, self.collision_callback)
+
+        self._pub_rand_light = rospy.Publisher(RAND_LIGHT_PUBLISHER, stdEmpty)
+        self._pub_rand_sky = rospy.Publisher(RAND_SKY_PUBLISHER, stdEmpty)
+        self._pub_rand_physics = rospy.Publisher(RAND_PHYSICS_PUBLISHER, stdEmpty)
+        self._pub_rand_obstacles = rospy.Publisher(RAND_OBSTACLES_PUBLISHER, stdEmpty)
+        self._pub_link_state = rospy.Publisher(LINK_STATE_PUBLISHER, LinkState)
 
         # Initialize a tree structure from the robot urdf.
         #   note that the xacro of the urdf is updated by hand.
@@ -243,8 +255,6 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # #bounds = self.model.actuator_ctrlrange.copy()
         low = -np.pi * np.ones(self.scara_chain.getNrOfJoints())
         high = np.pi * np.ones(self.scara_chain.getNrOfJoints())
-        # low = -np.pi * np.ones(self.scara_chain.getNrOfJoints())
-        # high = np.pi * np.ones(self.scara_chain.getNrOfJoints())
         # low = -np.inf * np.ones(self.scara_chain.getNrOfJoints())
         # high = np.inf * np.ones(self.scara_chain.getNrOfJoints())
         # print("Action spaces: ", low, high)
@@ -253,90 +263,80 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         low = -high
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
-        self.add_model = rospy.ServiceProxy('/gazebo/spawn_urdf_model', SpawnModel)
+        self.add_model_urdf = rospy.ServiceProxy('/gazebo/spawn_urdf_model', SpawnModel)
+        self.add_model_sdf = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
         self.remove_model = rospy.ServiceProxy('/gazebo/delete_model', DeleteModel)
+        self.set_model_pose = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+        self.get_model_state = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
-        self.reset_world = rospy.ServiceProxy('/gazebo/reset_world', Empty)
 
-        model_xml = "<?xml version=\"1.0\"?> \
-                    <robot name=\"myfirst\"> \
-                      <link name=\"world\"> \
-                      </link>\
-                      <link name=\"cylinder0\">\
-                        <visual>\
-                          <geometry>\
-                            <sphere radius=\"0.01\"/>\
-                          </geometry>\
-                          <origin xyz=\"0 0 0\"/>\
-                          <material name=\"rojotransparente\">\
-                              <ambient>0.5 0.5 1.0 0.1</ambient>\
-                              <diffuse>0.5 0.5 1.0 0.1</diffuse>\
-                          </material>\
-                        </visual>\
-                        <inertial>\
-                          <mass value=\"5.0\"/>\
-                          <inertia ixx=\"1.0\" ixy=\"0.0\" ixz=\"0.0\" iyy=\"1.0\" iyz=\"0.0\" izz=\"1.0\"/>\
-                        </inertial>\
-                      </link>\
-                      <joint name=\"world_to_base\" type=\"fixed\"> \
-                        <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\
-                        <parent link=\"world\"/>\
-                        <child link=\"cylinder0\"/>\
-                      </joint>\
-                      <gazebo reference=\"cylinder0\">\
-                        <material>Gazebo/GreenTransparent</material>\
-                      </gazebo>\
-                    </robot>"
         robot_namespace = ""
         pose = Pose()
         pose.position.x = EE_POS_TGT[0,0];
         pose.position.y = EE_POS_TGT[0,1];
         pose.position.z = EE_POS_TGT[0,2];
-
-        #Static obstacle (not in original code)
-        # pose.position.x = 0.25;#
-        # pose.position.y = 0.07;#
-        # pose.position.z = 0.0;#
-
         pose.orientation.x = 0;
         pose.orientation.y= 0;
         pose.orientation.z = 0;
         pose.orientation.w = 0;
         reference_frame = ""
+
+        self.envs_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        file_xml = open(self.envs_path + '/assets/urdf/target/point.urdf' ,mode='r')
+        model_xml = file_xml.read()
+        file_xml.close()
+
         rospy.wait_for_service('/gazebo/spawn_urdf_model')
-        self.add_model(model_name="target",
-                        model_xml=model_xml,
-                        robot_namespace="",
-                        initial_pose=pose,
-                        reference_frame="")
+        try:
+            self.add_model_urdf(model_name="target",
+                                model_xml=model_xml,
+                                robot_namespace="",
+                                initial_pose=pose,
+                                reference_frame="world")
+        except rospy.ServiceException as e:
+            print('Error adding urdf model')
 
+        # # self.obj_path = self.envs_path + '/assets/urdf/objs/rubik_cube/rubik_cube_random.sdf'
+        # # self.obj_path = self.envs_path + '/assets/urdf/objs/rubik_cube/rubik_cube.sdf'
+        # self.obj_path = self.envs_path + '/assets/urdf/objs/box.sdf'
+        # # self.obj_path = self.envs_path + '/assets/urdf/objs/red_point.urdf'
+        # file_sdf = open(self.obj_path ,mode='r')
+        # model_sdf = file_sdf.read()
+        # file_sdf.close()
+        #
+        # rospy.wait_for_service('/gazebo/spawn_sdf_model')
+        # # rospy.wait_for_service('/gazebo/spawn_urdf_model')
+        # try:
+        #     # self.add_model_urdf(model_name="obj",
+        #     self.add_model_sdf(model_name="obj",
+        #                         model_xml=model_sdf,
+        #                         robot_namespace="",
+        #                         initial_pose=pose,
+        #                         reference_frame="world")
+        # except rospy.ServiceException as e:
+        #     print('Error adding sdf model')
 
-        # Seed the environment
-        # Seed the environment
         self._seed()
-    # def collision_callback(self, message):
-    #     """
-    #     Callback method for the subscriber of Collision data
-    #     """
-    #
-    #
-    #     if "puzzle_ball_joints::cubie" not in message.collision1_name and "puzzle_ball_joints::cubie" not in message.collision2_name:
-    #         if "robot::motor6_link::motor6_link_fixed_joint_lump__robotiq_arg2f_base_link_collision_1" not in message.collision1_name and  "robot::left_outer_finger::left_outer_finger_collision" not in message.collision2_name:
-    #             if "puzzle_ball_joints::cubie" not in message.collision1_name or  "robot::table::table_fixed_joint_lump__mara_work_area_link_collision_4" not in message.collision2_name:
-    #                 if message.collision1_name and message.collision2_name:
-    #                     self._collision_msg =  message
-    #                     # print("self._collision_msg: ", self._collision_msg)
 
     def collision_callback(self, message):
         """
         Callback method for the subscriber of Collision data
         """
         self._collision_msg = None
+        # if message.collision1_name is not message.collision2_name:
+        #     if "objs" not in message.collision1_name and "obj" not in message.collision2_name:
+        #         if "obj" not in message.collision1_name or "robot::table::table_fixed_joint_lump__mara_work_area_link_collision_4" not in message.collision2_name:
+        #             if "robot::motor6_link::motor6_link_fixed_joint_lump__robotiq_arg2f_base_link_collision_1" not in message.collision1_name and  "robot::left_outer_finger::left_outer_finger_collision" not in message.collision2_name:
+        #                 self._collision_msg =  message
+
         if message.collision1_name is not message.collision2_name:
-            if "puzzle_ball_joints::cubie" not in message.collision1_name and "puzzle_ball_joints::cubie" not in message.collision2_name:
-                if "puzzle_ball_joints::cubie" not in message.collision1_name or  "robot::table::table_fixed_joint_lump__mara_work_area_link_collision_4" not in message.collision2_name:
+            if "obj" not in message.collision1_name and "obj" not in message.collision2_name:
+                if "obj" not in message.collision1_name and "robot::table::table_fixed_joint_lump__mara_work_area_link_collision_4" not in message.collision2_name:
                     if "robot::motor6_link::motor6_link_fixed_joint_lump__robotiq_arg2f_base_link_collision_1" not in message.collision1_name and  "robot::left_outer_finger::left_outer_finger_collision" not in message.collision2_name:
-                        self._collision_msg =  message
+                        if "obstacle" not in message.collision1_name and "robot::table::table_fixed_joint_lump__mara_work_area_link_collision_4" not in message.collision2_name:
+                            if "obstacle" not in message.collision1_name and "obj" not in "message.collision2_name":
+                                self._collision_msg =  message
 
     def observation_callback(self, message):
         """
@@ -352,84 +352,115 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             print("slowness_unit: ", self.slowness_unit, "type of variable: ", type(slowness_unit))
             print("reset joints: ", self.reset_jnts, "type of variable: ", type(self.reset_jnts))
 
-    def randomizeTargetPositions(self):
-        """
-        The goal is to test with randomized positions which range between the boundries of the H-ROS logo
-        """
-        print("In randomize target positions.")
-        EE_POS_TGT_RANDOM1 = np.asmatrix([np.random.uniform(0.2852485,0.3883636), np.random.uniform(-0.1746508,0.1701576), 0.2868]) # boundry box of the first half H-ROS letters with +-0.01 offset
-        EE_POS_TGT_RANDOM2 = np.asmatrix([np.random.uniform(0.2852485,0.3883636), np.random.uniform(-0.1746508,0.1701576), 0.2868]) # boundry box of the H-ROS letters with +-0.01 offset
-        # EE_POS_TGT_RANDOM1 = np.asmatrix([np.random.uniform(0.2852485, 0.3883636), np.random.uniform(-0.1746508, 0.1701576), 0.3746]) # boundry box of whole box H-ROS letters with +-0.01 offset
-        EE_ROT_TGT = np.asmatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    def random_texture(self):
+        material_path = self.envs_path + "/assets/urdf/Media/materials/scripts/textures.material"
+        m = open(material_path,'r')
+        textures = []
+
+        for t in m:
+            if t.startswith("material "):
+                textures.append(t[9:-1])
+
+        rand_texture = np.random.choice(textures)
+        return rand_texture, textures
+
+    def randomizeTexture(self, current_obj_name):
+        f = open(self.obj_path,'r+')
+        model_xml = f.read()
+        f.seek(0)
+
+        new_texture, list_textures = self.random_texture()
+        for lt in list_textures:
+            if lt != str(new_texture):
+                model_xml = model_xml.replace(lt, new_texture)
+
+        f.truncate()
+        f.write(model_xml)
+        f.close()
+        self.randomizeObjectType(current_obj_name=current_obj_name, replace=self.obj_path)
+
+    def randomizeObjectType(self, current_obj_name=None, list_obj=None, replace=None):
+        obj = ModelState()
+
+        rospy.wait_for_service('gazebo/get_model_state')
+        try:
+            obj = self.get_model_state("target", '')
+        except rospy.ServiceException as e:
+            print("Error getting the model state")
+
+        rospy.wait_for_service('/gazebo/delete_model')
+        try:
+            self.remove_model(current_obj_name)
+        except rospy.ServiceException as e:
+            print("Error removing model")
+
+        if replace is None:
+            random_obj = np.random.choice(list_obj)
+            self.obj_path = random_obj
+        else:
+            random_obj = replace
+
+        obj_file = open(random_obj, mode='r')
+        model_xml = obj_file.read()
+        obj_file.close()
+
+        if random_obj.endswith('.sdf'):
+            rospy.wait_for_service('/gazebo/spawn_sdf_model')
+            try:
+                self.add_model_sdf(model_name=current_obj_name,
+                                    model_xml=model_xml,
+                                    robot_namespace="",
+                                    initial_pose=obj.pose,
+                                    reference_frame="world")
+            except rospy.ServiceException as e:
+                print("Error adding sdf")
+        else:
+            rospy.wait_for_service('/gazebo/spawn_urdf_model')
+            try:
+                self.add_model_urdf(model_name=current_obj_name,
+                                    model_xml=model_xml,
+                                    robot_namespace="",
+                                    initial_pose=obj.pose,
+                                    reference_frame="world")
+            except rospy.ServiceException as e:
+                print("Error adding urdf")
+
+    def randomizeStartPose(self, lower, upper):
+        self.environment['reset_conditions']['initial_positions'] = [ np.random.uniform(lower,upper), np.random.uniform(lower,upper),np.random.uniform(lower,upper), np.random.uniform(lower,upper),np.random.uniform(lower,upper),np.random.uniform(lower,upper) ]
+        self._pub.publish(self.get_trajectory_message(self.environment['reset_conditions']['initial_positions']))
+
+    def randomizeTargetPose(self, obj_name):
+        EE_POS_TGT = np.asmatrix([[round(np.random.uniform(-0.62713, -0.29082), 5), round(np.random.uniform(-0.15654, 0.15925), 5), 0.72466]])
+
+        roll = 0.0
+        pitch = 0.0
+        yaw = np.random.uniform(-1.57, 1.57)
+        q = quat.from_euler_angles(roll, pitch, yaw)
+        EE_ROT_TGT = rot_matrix = quat.as_rotation_matrix(q)
+        self.target_orientation = EE_ROT_TGT
+
         EE_POINTS = np.asmatrix([[0, 0, 0]])
-        ee_pos_tgt_random1 = EE_POS_TGT_RANDOM1
-        ee_pos_tgt_random2 = EE_POS_TGT_RANDOM2
 
-        # leave rotation target same since in scara we do not have rotation of the end-effector
-        ee_rot_tgt = EE_ROT_TGT
-        target1 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_random1, ee_rot_tgt).T)
-        target2 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_random2, ee_rot_tgt).T)
+        ee_tgt = np.ndarray.flatten(get_ee_points(EE_POINTS, EE_POS_TGT, EE_ROT_TGT).T)
+        self.realgoal = ee_tgt
 
-        # self.realgoal = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_random1, ee_rot_tgt).T)
+        ms = ModelState()
+        ms.pose.position.x = EE_POS_TGT[0,0]
+        ms.pose.position.y = EE_POS_TGT[0,1]
+        ms.pose.position.z = EE_POS_TGT[0,2]
+        ms.pose.orientation.x = q.x
+        ms.pose.orientation.y = q.y
+        ms.pose.orientation.z = q.z
+        ms.pose.orientation.w = q.w
 
-        self.realgoal = target1 if np.random.uniform() < 0.5 else target2
-        print("randomizeTarget realgoal: ", self.realgoal)
+        self._pub_link_state.publish( LinkState(link_name="target_link", pose=ms.pose, reference_frame="world") )
 
-    def randomizeTarget(self):
-        print("calling randomize target")
-
-        EE_POS_TGT_1 = np.asmatrix([-0.189383, -0.123176, 0.894476]) # point 1
-        EE_POS_TGT_2 = np.asmatrix([-0.359236, 0.0297278, 0.760402]) # point 2
-        EE_ROT_TGT = np.asmatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-        EE_POINTS = np.asmatrix([[0, 0, 0]])
-
-        ee_pos_tgt_1 = EE_POS_TGT_1
-        ee_pos_tgt_2 = EE_POS_TGT_2
-
-        # leave rotation target same since in scara we do not have rotation of the end-effector
-        ee_rot_tgt = EE_ROT_TGT
-
-        # Initialize target end effector position
-        # ee_tgt = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt, ee_rot_tgt).T)
-
-        target1 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_1, ee_rot_tgt).T)
-        target2 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_2, ee_rot_tgt).T)
-
-
-        """
-        This is for initial test only, we need to change this in the future to be more realistic.
-        E.g. covered target -> go to other target. This could be implemented for example with vision.
-        """
-        self.realgoal = target1 if np.random.uniform() < 0.5 else target2
-        print("randomizeTarget realgoal: ", self.realgoal)
-
-    def randomizeMultipleTargets(self):
-        print("calling randomize multiple target")
-
-        EE_POS_TGT_1 = np.asmatrix([0.3325683, 0.0657366, 0.2868]) # center of O
-        EE_POS_TGT_2 = np.asmatrix([0.3305805, -0.1326121, 0.2868]) # center of the H
-        EE_ROT_TGT = np.asmatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-        EE_POINTS = np.asmatrix([[0, 0, 0]])
-
-        ee_pos_tgt_1 = EE_POS_TGT_1
-        ee_pos_tgt_2 = EE_POS_TGT_2
-
-        # leave rotation target same since in scara we do not have rotation of the end-effector
-        ee_rot_tgt = EE_ROT_TGT
-
-        # Initialize target end effector position
-        # ee_tgt = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt, ee_rot_tgt).T)
-
-        target1 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_1, ee_rot_tgt).T)
-        target2 = np.ndarray.flatten(get_ee_points(EE_POINTS, ee_pos_tgt_2, ee_rot_tgt).T)
-
-
-        """
-        This is for initial test only, we need to change this in the future to be more realistic.
-        E.g. covered target -> go to other target. This could be implemented for example with vision.
-        """
-        self.realgoal = target1 if np.random.uniform() < 0.5 else target2
-        print("randomizeTarget realgoal: ", self.realgoal)
+        ms.model_name = obj_name
+        rospy.wait_for_service('gazebo/set_model_state')
+        try:
+            self.set_model_pose(ms)
+        except (rospy.ServiceException) as e:
+            print("Error setting the pose of " + obj_name)
 
     def get_trajectory_message(self, action, robot_id=0):
         """
@@ -466,7 +497,6 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         """
         if not message:
             print("Message is empty");
-            # return None
         else:
             # # Check if joint values are in the expected order and size.
             if message.joint_names != agent['joint_order']:
@@ -544,12 +574,8 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         Take observation from the environment and return it.
         TODO: define return type
         """
-        # Take an observation
-        # done = False
-
         obs_message = self._observation_msg
         if obs_message is None:
-            # print("last_observations is empty")
             return None
 
         # Collect the end effector points and velocities in
@@ -564,18 +590,16 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             print("End link is empty!!")
             return None
         else:
-            # print(self.environment['link_names'][-1])
             trans, rot = forward_kinematics(self.scara_chain,
                                         self.environment['link_names'],
                                         last_observations[:self.scara_chain.getNrOfJoints()],
                                         base_link=self.environment['link_names'][0],
                                         end_link=self.environment['link_names'][-1])
-            # #
+
             rotation_matrix = np.eye(4)
             rotation_matrix[:3, :3] = rot
             rotation_matrix[:3, 3] = trans
             # angle, dir, _ = rotation_from_matrix(rotation_matrix)
-            # #
             # current_quaternion = np.array([angle]+dir.tolist())#
 
             # # I need this calculations for the new reward function, need to send them back to the run mara or calculate them here
@@ -583,15 +607,10 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             # tgt_quartenion = quaternion_from_matrix(self.target_orientation)
 
             current_quaternion = quat.from_rotation_matrix(rotation_matrix)
-            # print("current_quaternion: ", current_quaternion)
             tgt_quartenion = quat.from_rotation_matrix(self.target_orientation)
 
             # A  = np.vstack([current_quaternion, np.ones(len(current_quaternion))]).T
-
             #quat_error = np.linalg.lstsq(A, tgt_quartenion)[0]
-
-            # this is wrong!!!! Substraction should be replaced by: quat_error = current_quaternion * tgt_quartenion.conjugate()
-            # quat_error = current_quaternion - tgt_quartenion
 
             quat_error = current_quaternion * tgt_quartenion.conjugate()
             rot_vec_err = quat.as_rotation_vector(quat_error)
@@ -599,16 +618,9 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             # convert quat to np arrays
             quat_error = quat.as_float_array(quat_error)
 
-
-
             # RK:  revisit this later, we only take one angle difference here!
             angle_diff = 2 * np.arccos(np.clip(quat_error[..., 0], -1., 1.))
-            # print("quat error: ", quat_error)
-            # print("quat_error[..., 0]: ", quat_error[..., 0])
-            # print("quat_error: ",quat_error)
-            # print("angle_diff: ", angle_diff)
-            # print("self.realgoal: ", self.realgoal)
-            # print("curr quat: ", current_quaternion)
+
             current_ee_tgt = np.ndarray.flatten(get_ee_points(self.environment['end_effector_points'],
                                                               trans,
                                                               rot).T)
@@ -627,13 +639,7 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
                           np.reshape(ee_points, -1),
                           np.reshape(rot_vec_err, -1),
                           np.reshape(ee_velocities, -1),]
-            # print("quat_error: ", quat_error)
-            # print("ee_points:", ee_points)
-            # print("angle_diff: ", angle_diff)
-            return np.r_[np.reshape(last_observations, -1),
-                          np.reshape(ee_points, -1),
-                          np.reshape(rot_vec_err, -1),
-                          np.reshape(ee_velocities, -1),]
+            return state
 
     def rmse_func(self, ee_points):
         """
@@ -715,7 +721,6 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # return self.ob, self.reward, done, collided, {}
         return self.ob, self.reward, done, {}
 
-
     def goToInit(self):
         self.ob = self.take_observation()
         while(self.ob is None):
@@ -742,11 +747,31 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         """
         Reset the agent for a particular experiment condition.
         """
+        # self._pub_rand_light.publish()
+        # self._pub_rand_sky.publish()
+        # self._pub_rand_physics.publish()
+        # self._pub_rand_obstacles.publish()
+        # self.randomizeTargetPose("obj")
+        # self.randomizeTexture("obj")
+
+        # common_path = self.envs_path + "/assets/urdf/objs/"
+        # path_list = [common_path + "rubik_cube/rubik_cube_random.sdf", common_path + "rubik_cube/rubik_cube.sdf",
+        #             common_path + "box.sdf", common_path + "red_point.urdf"]
+        # for pl in path_list:
+        #     if pl == self.obj_path:
+        #         path_list.remove(pl)
+        # self.randomizeObjectType("obj", path_list)
 
         self.iterator = 0
 
         if self.reset_jnts is True:
             self._pub.publish(self.get_trajectory_message(self.environment['reset_conditions']['initial_positions']))
+
+            # self.randomizeStartPose(-3.13, 3.13)
+            # # Generate a new random start pose until it is not a colliding state
+            # while self._collision_msg is not None:
+            #     self.randomizeStartPose(-3.13, 3.13)
+
             if (self.slowness_unit == 'sec') or (self.slowness_unit is None):
                 time.sleep(int(self.slowness))
             elif(self.slowness_unit == 'nsec'):
