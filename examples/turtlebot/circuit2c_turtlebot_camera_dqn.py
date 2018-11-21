@@ -217,11 +217,11 @@ if __name__ == '__main__':
     env = gym.make('GazeboCircuit2cTurtlebotCameraNnEnv-v0')
     outdir = '/tmp/gazebo_gym_experiments/'
 
-    continue_execution = False
+    continue_execution = True
     #fill this if continue_execution=True
-    weights_path = '/tmp/turtle_c2c_dqn_ep200.h5'
-    monitor_path = '/tmp/turtle_c2c_dqn_ep200'
-    params_json  = '/tmp/turtle_c2c_dqn_ep200.json'
+    weights_path = '/tmp/turtle_c2c_dqn_ep1300.h5'
+    monitor_path = '/tmp/turtle_c2c_dqn_ep1300'
+    params_json  = '/tmp/turtle_c2c_dqn_ep1300.json'
 
     img_rows, img_cols, img_channels = env.img_rows, env.img_cols, env.img_channels
     epochs = 100000
