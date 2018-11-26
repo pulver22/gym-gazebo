@@ -35,7 +35,7 @@ env = gym.make('GazeboCircuit2cTurtlebotCameraNnEnv-v1')  # Camera + CNN
 #
 seed = 0
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
-model = PPO1(CnnPolicy, env, verbose=1)
+model = PPO1(CnnPolicy, env, verbose=1, tensorboard_log="/home/pulver/Desktop/ppo_turtlebot/")
 model.learn(total_timesteps=1e6)
 # ppo_agent = pposgd_simple.learn(env, policy_cnn,
 #                     max_timesteps=1e6,

@@ -31,14 +31,18 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboCircuit2cTurtlebotLidar_v0.launch")
         self.vel_pub = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=5)
-        self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
-        # self._sub = rospy.Subscriber('/camera/rgb/image_raw', Image, self.observation_callback)
+        # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
+        self.camera_sub = rospy.Subscriber('/camera/rgb/image_raw', Image, self.observation_callback)
+        self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
 
         self._observation_msg = None
+        self._lidar_msg = None
+        self._last_obs_header = None
+        self._last_lidar_header = None
         self.obs = None
         self.reward = None
         self.done = None
@@ -58,16 +62,19 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.img_cols = 84
         self.img_channels = 1
 
+        # Lidar setting
+        self.min_range = 0.21
+
         # Observation space
         self.observation_high = 255
         self.observation_low = 0
         self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)
 
         # Environment hyperparameters
-        self.min_x = -5.0
-        self.max_x = - self.min_x
-        self.min_y = - 5.0
-        self.max_y = - self.min_y
+        self.min_x = -4.0
+        self.max_x = 0
+        self.min_y = - 7.5
+        self.max_y = 0
 
         self.reward_range = (-np.inf, np.inf)
 
@@ -76,50 +83,53 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
     def observation_callback(self, message):
         """
-        Callback method for the subscriber of JointTrajectoryControllerState
+        Callback method for the subscriber of the camera
         """
-        self._observation_msg =  message.data
-        print("Callback")
-        print(self._observation_msg)
+        if message.header.seq != self._last_obs_header:
+            self._last_obs_header = message.header.seq
+            self._observation_msg = message
+        else:
+            ROS_ERROR("Not receiving images")
+
+    def lidar_callback(self, message):
+        """
+        Callback method for the subscriber of lidar
+        """
+        if message.header.seq != self._last_lidar_header:
+            self._last_lidar_header = message.header.seq
+            self._lidar_msg =  np.array(message.ranges)
+        else:
+            ROS_ERROR("Not receiving lidar readings")
+
 
     def take_observation(self):
         """
         Take observation from the environment and return itself.
         """
-        # min_range = 0.2
-        # done = False
-        # obs_message = self._observation_msg
-        # print("Obs_msgs: ", self._observation_msg)
+
         obs_message = None
         bridge = CvBridge()
-        print("Camera Empty: ", obs_message)
+        # print("Camera Empty: ", obs_message)
         while obs_message is None:
             try:
-                obs_message = rospy.wait_for_message('/camera/rgb/image_raw', Image, timeout=5)
-                # obs_message = rospy.wait_for_message('/drl/camera', HeaderString)
-
-                # Convert from sensor_msgs::Image to cv::Mat
-        #         cv_image = bridge.imgmsg_to_cv2(obs_message, desired_encoding="passthrough")
-        #         # Access global variable and store image as numpy.array
-        #         obs_message = np.asarray(cv_image)
+                obs_message = self._observation_msg
             except:# CvBridgeError as ex:
                 print ("ERROR!!")#, ex)
-        print("Data:", obs_message.data)
-        # print("Data: ", np.fromstring(obs_message.data, dtype=int))
-        # print("Type:", type(obs_message))
-        # print("Type data:", type(obs_message.data))
-        # print("Camera: ", string(obs_message.data))
-        # image_data = obs_message.data
-        # print("Camera: ", obs_message)
-        # bridge = CvBridge()
-        # try:
-        #     # Convert from sensor_msgs::Image to cv::Mat
-        #     cv_image = bridge.imgmsg_to_cv2(obs_message, desired_encoding="passthrough")
-        #     # Access global variable and store image as numpy.array
-        #     obs_message = np.asarray(cv_image)
-        # except CvBridgeError as ex:
-        #     print ("ERROR!!", ex)
-
+        # Convert from sensor_msgs::Image to cv::Mat
+        cv_image = bridge.imgmsg_to_cv2(obs_message, desired_encoding="bgr8")
+        # TODO: temporal fix, check image is not corrupted
+        # if not (cv_image[self.img_rows // 2, self.img_cols // 2, 0] == 178 and cv_image[self.img_rows // 2, self.img_cols // 2, 1] == 178 and cv_image[
+        #     self.img_rows // 2, self.img_cols // 2, 2] == 178):
+        #     success = True
+        # else:
+        #     # pass
+        #     print("/camera/rgb/image_raw ERROR, retrying")
+        # Convert the image to grayscale
+        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        # Resize and reshape the image according to the network input size
+        cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols))
+        obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
+        # print("  --> Observation acquired")
         return obs_message
 
     def get_velocity_message(self, action):
@@ -134,10 +144,19 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         return action_msg
 
     def calculate_done(self,data):
-        min_range = 0.21
         done = False
-        for i, item in enumerate(data.ranges):
-            if (min_range > data.ranges[i] > 0):
+        for i, item in enumerate(data):
+
+            # If the laser reading return an infinite distance, clip it to 100 meters
+            if (data[i] == np.inf):
+                data[i] = 100
+
+            # If the laser reading returns not a number, clip it to 0 meters
+            if np.isnan(data[i]):
+                data[i] == 0
+
+            # If the obstacles is closer than the minimum safety distance, stop the episode
+            if (self.min_range > data[i] > 0):
                 done = True
         return done
 
@@ -157,65 +176,50 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         min_range = 0.2
         done = False
         self.iterator+=1
-
+        # print("  --> Sending action")
         #TODO: Create an action message
         self.vel_pub.publish(self.get_velocity_message(action))
         # print("[", self.iterator, "] Action selected [lin, ang]: ", action)
-
-        self.ob = self.take_observation()
 
 
         #########################
         ##         DONE        ##
         #########################
-        data = None
-        while data is None:
+        laser_ranges = None
+        while laser_ranges is None:
             try:
-                data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
+                # print("  --> Acquiring laser data")
+                laser_ranges = self._lidar_msg
             except:
                 pass
 
-        self.done = self.calculate_done(data)
+        self.done = self.calculate_done(laser_ranges)
 
         #########################
         ##         STATE       ##
         #########################
-        success = False
-        cv_image = None
-        while(self.ob is None or success is False):
+        self.ob = None
+        while(self.ob is None):
             try:
+                # print("  --> Acquiring observation")
                 self.ob = self.take_observation()
-                h = self.ob.height
-                w = self.ob.width
-                cv_image = CvBridge().imgmsg_to_cv2(self.ob, "bgr8")
-                # temporal fix, check image is not corrupted
-                if not (cv_image[h // 2, w // 2, 0] == 178 and cv_image[h // 2, w // 2, 1] == 178 and cv_image[
-                    h // 2, w // 2, 2] == 178):
-                    success = True
-                else:
-                    # pass
-                    print("/camera/rgb/image_raw ERROR, retrying")
             except:
                 pass
-        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols))
-        self.ob = cv_image.reshape(1, 1, cv_image.shape[0], cv_image.shape[1])
 
         #########################
         ##        REWARD       ##
         #########################
         self.last50actions.pop(0) #remove oldest
-        if action == 0:
+        if action[0] > action[1]:
             self.last50actions.append(0)
         else:
             self.last50actions.append(1)
         action_sum = sum(self.last50actions)
 
         # Add center of the track reward
-        # len(data.ranges) = 100
-        laser_len = len(data.ranges)
-        left_sum = sum(data.ranges[laser_len - (laser_len / 5):laser_len - (laser_len / 10)])  # 80-90
-        right_sum = sum(data.ranges[(laser_len / 10):(laser_len / 5)])  # 10-20
+        laser_len = len(laser_ranges)
+        left_sum = sum(laser_ranges[int(laser_len - (laser_len / 5)):int(laser_len - (laser_len / 10))])  # 80-90
+        right_sum = sum(laser_ranges[int((laser_len / 10)):int((laser_len / 5))])  # 10-20
         center_detour = abs(right_sum - left_sum) / 5
 
         if not self.done:
@@ -228,42 +232,21 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         else:
             self.reward = -1
 
-        return self.ob, self.reward, done, {}
+        return self.ob, self.reward, self.done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
+        # print("New episode")
         rospy.wait_for_service('/gazebo/reset_simulation')
         try:
             #reset_proxy.call()
             self.reset_proxy()
         except (rospy.ServiceException) as e:
             print ("/gazebo/reset_simulation service call failed")
-        #
-        # # Unpause simulation to make observation
-        # rospy.wait_for_service('/gazebo/unpause_physics')
-        # try:
-        #     #resp_pause = pause.call()
-        #     self.unpause()
-        # except (rospy.ServiceException) as e:
-        #     print ("/gazebo/unpause_physics service call failed")
-        # #read laser data
-        # data = None
-        # while data is None:
-        #     try:
-        #         data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
-        #     except:
-        #         pass
-        #
-        # rospy.wait_for_service('/gazebo/pause_physics')
-        # try:
-        #     #resp_pause = pause.call()
-        #     self.pause()
-        # except (rospy.ServiceException) as e:
-        #     print ("/gazebo/pause_physics service call failed")
-        #
-        # state,done = self.calculate_observation(data)
 
+        # Reset the step iterator
         self.iterator = 0
+
         if self.reset_position is True:
             # rospy.wait_for_service('/gazebo/reset_simulation')
             rospy.wait_for_service('/gazebo/set_model_state')
@@ -275,18 +258,12 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
                 print ("/gazebo/reset_simulation service call failed")
                 print("/gazebo/set_model_state service call failed")
 
-        # rospy.wait_for_service('/gazebo/pause_physics')
-        # try:
-        #     #resp_pause = pause.call()
-        #     self.pause()
-        # except (rospy.ServiceException) as e:
-        #     print ("/gazebo/pause_physics service call failed")
 
         # Take an observation
         self.ob = None
         while(self.ob is None):
+            # print("  --> Acquiring first observation")
             self.ob = self.take_observation()
-        #print("Observation after reset: ", self.ob)
 
         return self.ob
 
