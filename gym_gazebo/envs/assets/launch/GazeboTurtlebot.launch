@@ -1,5 +1,5 @@
 <launch>
-  <arg name="world_file"  default="$(env GYM_GAZEBO_WORLD_CIRCUIT)"/>
+  <arg name="world_file"  default="$(env GYM_GAZEBO_WORLD_CIRCUIT2C)"/>
   <arg name="base"      value="$(optenv TURTLEBOT_BASE kobuki)"/> <!-- create, roomba -->
   <arg name="battery"   value="$(optenv TURTLEBOT_BATTERY /proc/acpi/battery/BAT0)"/>  <!-- /proc/acpi/battery/BAT0 --> 
   <arg name="paused" value="true"/>
@@ -8,14 +8,14 @@
   <arg name="stacks"    value="$(optenv TURTLEBOT_STACKS hexagons)"/>  <!-- circles, hexagons --> 
   <arg name="3d_sensor" value="$(optenv TURTLEBOT_3D_SENSOR kinect)"/>  <!-- kinect, asus_xtion_pro --> 
 
-
-
-  <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="use_sim_time" value="true"/>
-    <arg name="debug" value="false"/>
-    <arg name="gui" value="$(arg gui)" />
-    <arg name="world_name" value="$(arg world_file)"/>
-  </include>
+  <!--<include file="$(find gazebo_ros)/launch/empty_world.launch">-->
+    <!--<arg name="use_sim_time" value="true"/>-->
+    <!--<arg name="debug" value="false"/>-->
+    <!--<arg name="gui" value="$(arg gui)" />-->
+    <!--<arg name="world_name" value="$(arg world_file)"/>-->
+    <!--<arg name="verbose" value="false"/>-->
+  <!--</include>-->
+  <include file="$(find ncnr_gazebo)/launch/trial_world.launch" />
   
   <include file="$(find turtlebot_gazebo)/launch/includes/$(arg base).launch.xml">
     <arg name="base" value="$(arg base)"/>

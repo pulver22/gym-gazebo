@@ -14,22 +14,23 @@ from gym_gazebo.envs import gazebo_env
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan, Image
 from std_srvs.srv import Empty
-from gazebo_msgs.srv import SetModelState
+from gazebo_msgs.srv import SetModelState, GetModelState
 from gazebo_msgs.msg import ModelState
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats, HeaderString
 
 from cv_bridge import CvBridge, CvBridgeError
+
 #from tf.transformations import quaternion_from_euler
 
 
 
 
-class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
+class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
     def __init__(self):
         # Launch the simulation with the given launchfile name
-        gazebo_env.GazeboEnv.__init__(self, "GazeboCircuit2cTurtlebotLidar_v0.launch")
+        gazebo_env.GazeboEnv.__init__(self, "GazeboTurtlebot.launch")
         self.vel_pub = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=5)
         # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
         self.camera_sub = rospy.Subscriber('/camera/rgb/image_raw', Image, self.observation_callback)
@@ -71,10 +72,13 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)
 
         # Environment hyperparameters
-        self.min_x = -4.0
-        self.max_x = 0
-        self.min_y = - 7.5
-        self.max_y = 0
+        self.min_x = -8.5
+        self.max_x = 4
+        self.min_y = - 2.0
+        self.max_y = 2.0
+        self.target_position = [None, None]
+        self.model_name = 'mobile_base'
+        self.reference_frame = 'world'
 
         self.reward_range = (-np.inf, np.inf)
 
@@ -209,29 +213,30 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #########################
         ##        REWARD       ##
         #########################
-        self.last50actions.pop(0) #remove oldest
-        if action[0] > action[1]:
-            self.last50actions.append(0)
-        else:
-            self.last50actions.append(1)
-        action_sum = sum(self.last50actions)
-
-        # Add center of the track reward
-        laser_len = len(laser_ranges)
-        left_sum = sum(laser_ranges[int(laser_len - (laser_len / 5)):int(laser_len - (laser_len / 10))])  # 80-90
-        right_sum = sum(laser_ranges[int((laser_len / 10)):int((laser_len / 5))])  # 10-20
-        center_detour = abs(right_sum - left_sum) / 5
-
-        if not self.done:
-            # The robot will get a better reward if it proceed straight
-            if action[0] > action[1]:
-                self.reward = 1 / float(center_detour+1)
-            elif action_sum > 45: #L or R looping
-                reward = -0.5
-            else: #L or R no looping
-                reward = 0.5 / float(center_detour+1)
-        else:
-            self.reward = -1
+        # self.last50actions.pop(0) #remove oldest
+        # if action[0] > action[1]:
+        #     self.last50actions.append(0)
+        # else:
+        #     self.last50actions.append(1)
+        # action_sum = sum(self.last50actions)
+        #
+        # # Add center of the track reward
+        # laser_len = len(laser_ranges)
+        # left_sum = sum(laser_ranges[int(laser_len - (laser_len / 5)):int(laser_len - (laser_len / 10))])  # 80-90
+        # right_sum = sum(laser_ranges[int((laser_len / 10)):int((laser_len / 5))])  # 10-20
+        # center_detour = abs(right_sum - left_sum) / 5
+        #
+        # if not self.done:
+        #     # The robot will get a better reward if it proceed straight
+        #     if action[0] > action[1]:
+        #         self.reward = 1 / float(center_detour+1)
+        #     elif action_sum > 45: #L or R looping
+        #         reward = -0.5
+        #     else: #L or R no looping
+        #         reward = 0.5 / float(center_detour+1)
+        # else:
+        #     self.reward = -1
+        self.reward = self.getReward()
 
         return self.ob, self.reward, self.done, {}
 
@@ -248,6 +253,7 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # Reset the step iterator
         self.iterator = 0
 
+        # Reset robot position
         if self.reset_position is True:
             # rospy.wait_for_service('/gazebo/reset_simulation')
             rospy.wait_for_service('/gazebo/set_model_state')
@@ -259,6 +265,8 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
                 print ("/gazebo/reset_simulation service call failed")
                 print("/gazebo/set_model_state service call failed")
 
+        # Reset the target position
+        self.getRandomTargetPosition()
 
         # Take an observation
         self.ob = None
@@ -285,7 +293,49 @@ class GazeboCircuit2TurtlebotCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         random_pose.pose.orientation.z = orientation.components[3]
         random_pose.pose.orientation.w = orientation.components[0]
 
-        random_pose.reference_frame = 'world'
-        random_pose.model_name = 'mobile_base'
+        random_pose.reference_frame = self.reference_frame
+        random_pose.model_name = self.model_name
 
-        return random_pose
+        return random_pose#
+
+    def getRandomTargetPosition(self):
+        """
+        Generate a random target within the arena
+        :return:
+        """
+        target_x = np.random.uniform(low=self.min_x, high=self.max_x)
+        target_y = np.random.uniform(low=self.min_y, high=self.max_y)
+        target_z = 0.0
+        self.target_position = np.array((target_x, target_y, target_z))
+
+    def goal_distance(self, goal_a, goal_b):
+        """
+        Calculate the distance between two points in space
+        :param goal_a:
+        :param goal_b:
+        :return:
+        """
+        assert goal_a.shape == goal_b.shape
+        # print("goal_distance", np.linalg.norm(goal_a - goal_b, axis=-1))
+        return np.linalg.norm(goal_a - goal_b, axis=-1)
+
+    def getReward(self):
+        """
+        Calculate the reward as euclidean distance from robot to target
+        :return:
+        """
+        gms = None
+        distance = None
+        robot_abs_pose = None
+
+
+        try:
+            rospy.wait_for_service('/gazebo/get_model_state')
+        except:
+            print("Service not ready")
+        model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
+        robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
+        robot_abs_pose = np.array((robot_abs_pose.pose.position.x, robot_abs_pose.pose.position.y, robot_abs_pose.pose.position.z ))
+        distance = self.goal_distance(robot_abs_pose, self.target_position)
+        return - distance.astype(np.float32)
+

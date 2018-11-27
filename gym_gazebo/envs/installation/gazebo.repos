@@ -92,6 +92,10 @@ repositories:
     type: git
     url: https://github.com/ros-planning/navigation
     version: indigo-devel
+  ncnr:
+    type: git
+    url: https://github.com/LCAS/ncnr.git
+    version: master
 #  osrf-common:
 #    type: hg
 #    url: https://bitbucket.org/osrf/osrf-common
@@ -108,6 +112,10 @@ repositories:
 #    type: git
 #    url: https://github.com/ros-visualization/qt_gui_core
 #    version: groovy-devel
+  rasberry:
+    type: git
+    url: https://github.com/LCAS/RASberry.git
+    version: master
   realtime_tools:
     type: git
     url: https://github.com/ros-controls/realtime_tools
@@ -132,6 +140,10 @@ repositories:
 #    type: git
 #    url: https://github.com/ros-visualization/rqt_robot_plugins
 #    version: master
+  thorvald:
+    type: git
+    url: https://github.com/LCAS/Thorvald
+    version: kinetic-devel
   turtlebot:
     type: git
     url: https://github.com/turtlebot/turtlebot
