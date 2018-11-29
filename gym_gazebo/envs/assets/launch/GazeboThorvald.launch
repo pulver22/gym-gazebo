@@ -2,40 +2,7 @@
 
 <launch>
 
-  <arg name="robot_name" default="thorvald" />
-  <arg name="robot_model" value="$(find thorvald_model)/config/thorvald_ii_4wd4ws_slim/thorvald_ii_4wd4ws_std.yaml" />
-  <arg name="model_extras" value="$(find ncnr_description)/urdf/sensor_modules/sensor_frames_lincoln_velo_k2.xacro" />
-  <arg name="simple_sim" default="True" />
-  <arg name="rvizGui" default="true"/>
-  <!-- <arg name="rviz_config_file" default="$(find ncnr_navigation)/rviz/pointcloud_octomap.rviz"/> -->
-  <arg name="rviz_config_file" default="$(find ncnr_navigation)/rviz/sim_path_planner_thorvald_new.rviz" />
+  <include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" />
 
-  <arg name="enable_odom_tf" value="False"/> <!-- False in order to allow gazebo to generate /odom -> base_link -->
-
-
-  <include file="$(find ncnr_gazebo)/launch/trial_world.launch" />
-
-
-  <!-- Thovald II 4wd4ws std bringup -->
-  <include file="$(find ncnr_gazebo)/launch/ncnr_thorvald_bringup.launch">
-    <arg name="robot_model" value="$(arg robot_model)"/>
-    <arg name="model_extras" value="$(arg model_extras)"/>
-    <arg name="simple_sim" value="$(arg simple_sim)"/>
-    <arg name="enable_odom_tf" value="$(arg enable_odom_tf)"/>
-  </include>
-
-  <!-- Spawn the robot in gazebo -->
-  <node name="spawn_robot" pkg="gazebo_ros" type="spawn_model"
-    args="-param robot_description
-    -urdf
-    -model thorvald_ii"
-    respawn="false" output="screen">
-  </node>
-
-  <!-- Static tf transform for simulation-->
-  <node pkg="tf" type="static_transform_publisher" name="map_odom_broadcaster" args="0 0 0 0 0 0 /map /odom 100"/>
-
-  <!-- Visualization -->
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config_file)" if="$(arg rvizGui)"/>
 
 </launch>

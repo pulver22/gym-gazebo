@@ -78,7 +78,7 @@ vcs import < ../../gazebo.repos
 cd ..
 catkin_make --pkg mav_msgs
 source devel/setup.bash
-catkin_make -j 1
+catkin_make
 bash -c 'echo source `pwd`/devel/setup.bash >> ~/.bashrc'
 echo "## ROS workspace compiled ##"
 

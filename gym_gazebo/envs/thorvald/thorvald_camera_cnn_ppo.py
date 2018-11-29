@@ -30,10 +30,10 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
     def __init__(self):
         # Launch the simulation with the given launchfile name
-        gazebo_env.GazeboEnv.__init__(self, "GazeboTurtlebot.launch")
-        self.vel_pub = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=5)
+        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch")
+        self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
         # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
-        self.camera_sub = rospy.Subscriber('/camera/rgb/image_raw', Image, self.observation_callback)
+        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
         self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
@@ -53,8 +53,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.reset_position = True
 
         # Action space
-        self.velocity_low = np.array([0.0, -0.1], dtype=np.float32)
-        self.velocity_high = np.array([0.2, 0.1], dtype=np.float32)
+        self.velocity_low = np.array([0.0, -0.3], dtype=np.float32)
+        self.velocity_high = np.array([0.5, 0.3], dtype=np.float32)
         self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
         self.last50actions = [0] * 50
 
@@ -64,7 +64,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.img_channels = 1
 
         # Lidar setting
-        self.min_range = 0.21
+        self.min_range = 0.5
 
         # Observation space
         self.observation_high = 255
@@ -77,8 +77,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.min_y = - 2.0
         self.max_y = 2.0
         self.target_position = [None, None]
-        self.model_name = 'mobile_base'
+        self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
+        self.acceptance_distance = 0.5
+        self.distance = None
+        self.positive_reward = 100
 
         self.reward_range = (-np.inf, np.inf)
 
@@ -118,7 +121,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             try:
                 obs_message = self._observation_msg
             except:# CvBridgeError as ex:
-                print ("ERROR!!")#, ex)
+                rospy.logerr ("ERROR!!")#, ex)
         # Convert from sensor_msgs::Image to cv::Mat
         cv_image = bridge.imgmsg_to_cv2(obs_message, desired_encoding="bgr8")
         # TODO: temporal fix, check image is not corrupted
@@ -161,7 +164,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
             # If the obstacles is closer than the minimum safety distance, stop the episode
             if (self.min_range > data[i] > 0):
-                done = True
+                return True
         return done
 
     def _seed(self, seed=None):
@@ -177,8 +180,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             - observation
             - dictionary (#TODO clarify)
         """
-        min_range = 0.2
-        done = False
+
         self.iterator+=1
         # print("  --> Sending action")
         #TODO: Create an action message
@@ -189,13 +191,14 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #########################
         ##         DONE        ##
         #########################
+        # TODO: check that done is set to True when walls are within safety distance [it does seems not to work]
         laser_ranges = None
         while laser_ranges is None:
             try:
                 # print("  --> Acquiring laser data")
                 laser_ranges = self._lidar_msg
             except:
-                pass
+                rospy.logerr("Error while reading Lidar")
 
         self.done = self.calculate_done(laser_ranges)
 
@@ -208,7 +211,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
                 # print("  --> Acquiring observation")
                 self.ob = self.take_observation()
             except:
-                pass
+                rospy.logerr("Problems acquiring the observation")
 
         #########################
         ##        REWARD       ##
@@ -236,19 +239,27 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #         reward = 0.5 / float(center_detour+1)
         # else:
         #     self.reward = -1
-        self.reward = self.getReward()
 
+        # print("  --> Calculating reward")
+        self.reward = self.getReward()
+        #print("Reward: ", self.reward)
+        if self.reward >= 0:
+            self.done = True
+
+        if self.done == True:
+            rospy.logwarn("Done: " + str(self.done))
+            rospy.logwarn("Reward: " + str(self.reward))
         return self.ob, self.reward, self.done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
-        # print("New episode")
-        rospy.wait_for_service('/gazebo/reset_simulation')
-        try:
-            #reset_proxy.call()
-            self.reset_proxy()
-        except (rospy.ServiceException) as e:
-            print ("/gazebo/reset_simulation service call failed")
+        print("New episode")
+
+        # rospy.wait_for_service('/gazebo/reset_simulation')
+        # try:
+        #     self.reset_proxy()
+        # except (rospy.ServiceException) as e:
+        #     print ("/gazebo/reset_simulation service call failed")
 
         # Reset the step iterator
         self.iterator = 0
@@ -258,15 +269,20 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             # rospy.wait_for_service('/gazebo/reset_simulation')
             rospy.wait_for_service('/gazebo/set_model_state')
             new_initial_pose = self.getRandomPosition()
+            #print("New initial position: ", new_initial_pose)
+            print("New starting position: [", new_initial_pose.pose.position.x, ",", new_initial_pose.pose.position.y, ", ", new_initial_pose.pose.position.z, "]")
             try:
                 self.set_position_proxy(new_initial_pose)
                 # self.reset_proxy()
             except (rospy.ServiceException) as e:
-                print ("/gazebo/reset_simulation service call failed")
-                print("/gazebo/set_model_state service call failed")
+                rospy.logerr ("/gazebo/reset_simulation service call failed")
+                rospy.logerr("/gazebo/set_model_state service call failed")
 
         # Reset the target position
         self.getRandomTargetPosition()
+        print("New target: ", self.target_position)
+        self.goal_distance()
+        print("Distance to goal: ", self.distance)
 
         # Take an observation
         self.ob = None
@@ -296,7 +312,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         random_pose.reference_frame = self.reference_frame
         random_pose.model_name = self.model_name
 
-        return random_pose#
+        return random_pose
 
     def getRandomTargetPosition(self):
         """
@@ -308,34 +324,30 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         target_z = 0.0
         self.target_position = np.array((target_x, target_y, target_z))
 
-    def goal_distance(self, goal_a, goal_b):
+    def goal_distance(self):
         """
         Calculate the distance between two points in space
         :param goal_a:
         :param goal_b:
         :return:
         """
-        assert goal_a.shape == goal_b.shape
+        model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
+        robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
+        robot_abs_pose = np.array(
+            (robot_abs_pose.pose.position.x, robot_abs_pose.pose.position.y, robot_abs_pose.pose.position.z))
+
+        assert robot_abs_pose.shape == self.target_position.shape
         # print("goal_distance", np.linalg.norm(goal_a - goal_b, axis=-1))
-        return np.linalg.norm(goal_a - goal_b, axis=-1)
+        self.distance = np.linalg.norm(robot_abs_pose - self.target_position, axis=-1)
 
     def getReward(self):
         """
         Calculate the reward as euclidean distance from robot to target
         :return:
         """
-        gms = None
-        distance = None
-        robot_abs_pose = None
 
-
-        try:
-            rospy.wait_for_service('/gazebo/get_model_state')
-        except:
-            print("Service not ready")
-        model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
-        robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
-        robot_abs_pose = np.array((robot_abs_pose.pose.position.x, robot_abs_pose.pose.position.y, robot_abs_pose.pose.position.z ))
-        distance = self.goal_distance(robot_abs_pose, self.target_position)
-        return - distance.astype(np.float32)
+        if self.distance < self.acceptance_distance:
+            return self.positive_reward
+        else:
+            return - self.distance.astype(np.float32) * 0.1
 

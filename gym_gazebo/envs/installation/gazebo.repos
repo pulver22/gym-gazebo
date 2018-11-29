@@ -44,10 +44,10 @@ repositories:
     type: git
     url: https://github.com/ros-drivers/driver_common.git
     version: indigo-devel
-  gazebo_ros_pkgs:
-    type: git
-    url: https://github.com/ros-simulation/gazebo_ros_pkgs
-    version: indigo-devel
+#gazebo_ros_pkgs:
+#  type: git
+#  url: https://github.com/ros-simulation/gazebo_ros_pkgs
+#  version: indigo-devel
 #  glog_catkin:
 #    type: git
 #    url: https://github.com/ethz-asl/glog_catkin.git
@@ -55,7 +55,7 @@ repositories:
   hector_gazebo:
     type: git
     url: https://github.com/tu-darmstadt-ros-pkg/hector_gazebo/
-    version: indigo-devel
+    version: kinetic-devel
   image_common:
     type: git
     url: https://github.com/ros-perception/image_common.git
@@ -92,10 +92,10 @@ repositories:
     type: git
     url: https://github.com/ros-planning/navigation
     version: indigo-devel
-  ncnr:
-    type: git
-    url: https://github.com/LCAS/ncnr.git
-    version: master
+#  ncnr:
+#    type: git
+#    url: https://github.com/LCAS/ncnr.git
+#    version: master
 #  osrf-common:
 #    type: hg
 #    url: https://bitbucket.org/osrf/osrf-common
@@ -112,10 +112,10 @@ repositories:
 #    type: git
 #    url: https://github.com/ros-visualization/qt_gui_core
 #    version: groovy-devel
-  rasberry:
-    type: git
-    url: https://github.com/LCAS/RASberry.git
-    version: master
+#  rasberry:
+#    type: git
+#    url: https://github.com/LCAS/RASberry.git
+#    version: master
   realtime_tools:
     type: git
     url: https://github.com/ros-controls/realtime_tools
@@ -140,10 +140,10 @@ repositories:
 #    type: git
 #    url: https://github.com/ros-visualization/rqt_robot_plugins
 #    version: master
-  thorvald:
-    type: git
-    url: https://github.com/LCAS/Thorvald
-    version: kinetic-devel
+#  thorvald:
+#    type: git
+#    url: https://github.com/pulver22/Thorvald
+#    version: kinetic-devel
   turtlebot:
     type: git
     url: https://github.com/turtlebot/turtlebot
@@ -156,14 +156,14 @@ repositories:
     type: git
     url: https://github.com/turtlebot/turtlebot_simulator
     version: indigo
-  vision_opencv:
-    type: git
-    url: https://github.com/ros-perception/vision_opencv
-    version: kinetic
-  xacro:
-    type: git
-    url: https://github.com/ros/xacro
-    version: indigo-devel
+#  vision_opencv:
+#    type: git
+#    url: https://github.com/ros-perception/vision_opencv
+#    version: kinetic
+#  xacro:
+#    type: git
+#    url: https://github.com/ros/xacro
+#    version: indigo-devel
   yocs_msgs:
     type: git
     url: https://github.com/yujinrobot/yocs_msgs
