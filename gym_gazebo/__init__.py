@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 register(
     id='GazeboThorvaldCameraEnv-v0',
     entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldCameraCnnPPOEnv',
-    max_episode_steps=1000
+    max_episode_steps=100
     # More arguments here
 )
 # Turtlebot envs

@@ -29,20 +29,60 @@ def policy_cnn(name, ob_space, ac_space):
 # if __name__ == '__main__':
 
 
+
+
+
 env = gym.make('GazeboThorvaldCameraEnv-v0')  # Camera + CNN
+
+###########################
+#         LOGGER          #
+###########################
+# basedir = "/home/pulver/Desktop/ppo_thorvald/positive_reward/"
+#
+# try:
+#     os.makedirs(basedir)
+#     print("Directory " , basedir ,  " created ")
+# except FileExistsError:
+#     pass
+#
+# os.environ[ 'OPENAI_LOGDIR' ] = basedir
+# os.environ[ 'OPENAI_LOG_FORMAT' ] = 'stdout,tensorboard'
+#
+# from stable_baselines import logger
+# print( 'Configuring stable-baselines logger')
+# logger.configure()
 # env = bench.Monitor(env, logger.get_dir())
 
+
+###########################
+#         MODEL           #
+###########################
+
 seed = 0
+directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
-model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_turtlebot/model_1")
-model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=1998,  tensorboard_log="/home/pulver/Desktop/ppo_turtlebot/model_2")
-model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_turtlebot/model_3")
-model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=9999,  tensorboard_log="/home/pulver/Desktop/ppo_turtlebot/model_4")
+model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
+model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=599,  tensorboard_log=directory)
+model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
+model_4 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=9999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
+
+###########################
+#         TRAIN           #
+###########################
+
 timer_start = time.time()
-model_1.learn(total_timesteps=1e6)
+#model_1.learn(total_timesteps=3e5, tb_log_name="999")
 model_2.learn(total_timesteps=1e6)
-model_3.learn(total_timesteps=1e6)
-model_4.learn(total_timesteps=1e6)
+# # # model_3.learn(total_timesteps=1e6, tb_log_name="3997")
+model_2.save(save_path=directory + "test_ppo")
+# del model_2
+# print("Saving")
+# ckp_path = directory + "test_ppo_2.pkl"
+# model_2 = PPO1.load(ckp_path, env, tensorboard_log=directory)
+# print("Loading")
+# model_2.learn(total_timesteps=3e6)
+# model_2.save(save_path=directory + "test_ppo_3")
+# model_4.learn(total_timesteps=3e5, tb_log_name="9999")
 # ppo_agent = pposgd_simple.learn(env, policy_cnn,
 #                     max_timesteps=1e6,
 #                     timesteps_per_actorbatch=2048,
@@ -50,5 +90,5 @@ model_4.learn(total_timesteps=1e6)
 #                     optim_epochs=10, optim_stepsize=3e-4, gamma=0.99,
 #                     optim_batchsize=64, lam=0.95, schedule='linear')
 timer_stop = time.time()
-print("Time episode: " + str(timer_stop - timer_start) + " seconds")
+print("Time simulation: " + str(timer_stop - timer_start) + " seconds")
 

@@ -39,6 +39,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+        # Gazebo specific services to start/stop its behavior and
+        # facilitate the overall RL environment
+        self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
+        self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+        # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
         self._observation_msg = None
         self._lidar_msg = None
@@ -48,13 +53,13 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.reward = None
         self.done = None
         self.action_space = None
-        self.max_episode_steps = 1000  # limit the max episode step
+        self.max_episode_steps = 100  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
 
         # Action space
-        self.velocity_low = np.array([0.0, -0.3], dtype=np.float32)
-        self.velocity_high = np.array([0.5, 0.3], dtype=np.float32)
+        self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
+        self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
         self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
         self.last50actions = [0] * 50
 
@@ -72,19 +77,29 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)
 
         # Environment hyperparameters
+        self.initial_pose = None
         self.min_x = -8.5
         self.max_x = 4
-        self.min_y = - 2.0
-        self.max_y = 2.0
+        self.min_y = - -1.5
+        self.max_y = 1.5
+        self.offset = 3.0
         self.target_position = [None, None]
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
-        self.acceptance_distance = 0.5
+
+
+
+        self.reward_range = (-1000.0, 1000)
+        self.penalization = - 200
+        self.positive_reward = 800
+        self.acceptance_distance = 0.20
+        self.proximity_distance = 0.5
         self.distance = None
-        self.positive_reward = 100
 
-        self.reward_range = (-np.inf, np.inf)
-
+        self.time_start = 0.0
+        self.time_stop = 0.0
+        self.rospy_time_start = 0.0
+        self.rospy_time_stop = 0.0
 
         self._seed()
 
@@ -150,8 +165,14 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         action_msg.angular.z = action[1]
         return action_msg
 
-    def calculate_done(self,data):
+    def calculate_collision(self,data):
+        """
+        Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance
+        :param data:
+        :return:
+        """
         done = False
+        reward = 0.0
         for i, item in enumerate(data):
 
             # If the laser reading return an infinite distance, clip it to 100 meters
@@ -164,8 +185,9 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
             # If the obstacles is closer than the minimum safety distance, stop the episode
             if (self.min_range > data[i] > 0):
-                return True
-        return done
+                rospy.logerr("Collision detected")
+                return True, self.penalization
+        return done, reward
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -181,17 +203,62 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             - dictionary (#TODO clarify)
         """
 
-        self.iterator+=1
+        self.iterator += 1
+        # print("Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        # print("ROSPY Time difference between step: ", (float(rospy.get_time()) - self.rospy_time_stop), " sec")
+
+        # self.time_stop = float(time.time())
+        # self.rospy_time_stop = float(rospy.get_time())
+
+        # print("Time difference between step: ", (self.time_stop - self.time_start), " sec")
+        # print("ROSPY Time difference between step: ", (self.rospy_time_stop - self.rospy_time_start) * 1e-9, " sec")
+
+
+        # Unpause simulation
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+            # print("UnPausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/unpause_physics service call failed")
+
+
+
+        #########################
+        ##       ACTION        ##
+        #########################
         # print("  --> Sending action")
         #TODO: Create an action message
         self.vel_pub.publish(self.get_velocity_message(action))
+        # wait until action gets executed
+        rospy.sleep(rospy.Duration(0.5))  # sleep for half second
         # print("[", self.iterator, "] Action selected [lin, ang]: ", action)
 
+        #########################
+        ##         STATE       ##
+        #########################
+        self.ob = None
+        while (self.ob is None):
+            try:
+                # print("  --> Acquiring observation")
+                self.ob = self.take_observation()
+            except:
+                rospy.logerr("Problems acquiring the observation")
+
+        # Pause simulation
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            # resp_pause = pause.call()
+            self.pause()
+            # print("Pausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
 
         #########################
         ##         DONE        ##
         #########################
         # TODO: check that done is set to True when walls are within safety distance [it does seems not to work]
+        # TODO: collision check must be performed using the physic engine
         laser_ranges = None
         while laser_ranges is None:
             try:
@@ -200,55 +267,41 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             except:
                 rospy.logerr("Error while reading Lidar")
 
-        self.done = self.calculate_done(laser_ranges)
+        self.done, self.reward = self.calculate_collision(laser_ranges)
 
-        #########################
-        ##         STATE       ##
-        #########################
-        self.ob = None
-        while(self.ob is None):
-            try:
-                # print("  --> Acquiring observation")
-                self.ob = self.take_observation()
-            except:
-                rospy.logerr("Problems acquiring the observation")
+
 
         #########################
         ##        REWARD       ##
         #########################
-        # self.last50actions.pop(0) #remove oldest
-        # if action[0] > action[1]:
-        #     self.last50actions.append(0)
-        # else:
-        #     self.last50actions.append(1)
-        # action_sum = sum(self.last50actions)
-        #
-        # # Add center of the track reward
-        # laser_len = len(laser_ranges)
-        # left_sum = sum(laser_ranges[int(laser_len - (laser_len / 5)):int(laser_len - (laser_len / 10))])  # 80-90
-        # right_sum = sum(laser_ranges[int((laser_len / 10)):int((laser_len / 5))])  # 10-20
-        # center_detour = abs(right_sum - left_sum) / 5
-        #
-        # if not self.done:
-        #     # The robot will get a better reward if it proceed straight
-        #     if action[0] > action[1]:
-        #         self.reward = 1 / float(center_detour+1)
-        #     elif action_sum > 45: #L or R looping
-        #         reward = -0.5
-        #     else: #L or R no looping
-        #         reward = 0.5 / float(center_detour+1)
-        # else:
-        #     self.reward = -1
 
         # print("  --> Calculating reward")
-        self.reward = self.getReward()
+        # Calculate the reward only if there is no collision
+        if self.done == False:
+            # Calculate actual distance from robot
+            self.getGoalDistance()
+            # Calculate reward
+            self.reward = self.reward + self.getReward()
         #print("Reward: ", self.reward)
-        if self.reward >= 0:
+        # If the reward is greater than zero, we are in proximity of the goal. So Done needs to be set to true
+        if self.reward >= 0 or self.iterator == (self.max_episode_steps -1):
             self.done = True
 
+
+        # Printing info
         if self.done == True:
-            rospy.logwarn("Done: " + str(self.done))
-            rospy.logwarn("Reward: " + str(self.reward))
+            # rospy.logwarn("Done: " + str(self.done))
+            print("Final distance to goal: ", self.distance)
+            if self.reward >= 0:
+                rospy.logerr("The robot reached its target")
+            else:
+                pass
+
+
+
+        self.rospy_time_start = float(rospy.get_rostime().nsecs)
+        self.time_start = float(time.time())
+
         return self.ob, self.reward, self.done, {}
 
     def reset(self):
@@ -264,31 +317,53 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # Reset the step iterator
         self.iterator = 0
 
+        # Unpause simulation
+        # rospy.wait_for_service('/gazebo/unpause_physics')
+        # try:
+        #     self.unpause()
+        #     print("UnPausing")
+        # except (rospy.ServiceException) as e:
+        #     print("/gazebo/unpause_physics service call failed")
+
         # Reset robot position
         if self.reset_position is True:
             # rospy.wait_for_service('/gazebo/reset_simulation')
             rospy.wait_for_service('/gazebo/set_model_state')
-            new_initial_pose = self.getRandomPosition()
+            self.initial_pose = self.getRandomPosition()
             #print("New initial position: ", new_initial_pose)
-            print("New starting position: [", new_initial_pose.pose.position.x, ",", new_initial_pose.pose.position.y, ", ", new_initial_pose.pose.position.z, "]")
             try:
-                self.set_position_proxy(new_initial_pose)
+                self.set_position_proxy(self.initial_pose)
                 # self.reset_proxy()
             except (rospy.ServiceException) as e:
                 rospy.logerr ("/gazebo/reset_simulation service call failed")
                 rospy.logerr("/gazebo/set_model_state service call failed")
 
-        # Reset the target position
+        # Reset the target position and calculate distance robot-target
         self.getRandomTargetPosition()
-        print("New target: ", self.target_position)
-        self.goal_distance()
-        print("Distance to goal: ", self.distance)
+        self.getGoalDistance()
+
+
 
         # Take an observation
         self.ob = None
         while(self.ob is None):
             # print("  --> Acquiring first observation")
             self.ob = self.take_observation()
+
+        # Pause the simulation
+        # rospy.wait_for_service('/gazebo/pause_physics')
+        # try:
+        #     self.pause()
+        #     print("Pausing")
+        # except (rospy.ServiceException) as e:
+        #     print("/gazebo/pause_physics service call failed")
+
+
+        # Printing info
+        print("New starting position: [", self.initial_pose.pose.position.x, ",", self.initial_pose.pose.position.y, ", ",
+              self.initial_pose.pose.position.z, "]")
+        print("New target: ", self.target_position)
+        print("Distance to goal: ", self.distance)
 
         return self.ob
 
@@ -319,12 +394,18 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         Generate a random target within the arena
         :return:
         """
-        target_x = np.random.uniform(low=self.min_x, high=self.max_x)
-        target_y = np.random.uniform(low=self.min_y, high=self.max_y)
+        low = self.initial_pose.pose.position.x - self.offset
+        high = self.initial_pose.pose.position.x + self.offset
+        target_x = np.random.uniform(low=low, high=high)
+        low = self.initial_pose.pose.position.y - self.offset
+        high = self.initial_pose.pose.position.y + self.offset
+        target_y = np.random.uniform(low=low, high=high)
+        # target_x = np.random.uniform(low=self.min_x, high=self.max_x)
+        # target_y = np.random.uniform(low=self.min_y, high=self.max_y)
         target_z = 0.0
         self.target_position = np.array((target_x, target_y, target_z))
 
-    def goal_distance(self):
+    def getGoalDistance(self):
         """
         Calculate the distance between two points in space
         :param goal_a:
@@ -346,8 +427,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         :return:
         """
 
+        #if self.distance < self.proximity_distance:
         if self.distance < self.acceptance_distance:
             return self.positive_reward
+         #   else:
+          #      return self.positive_reward * 0.01 - self.distance
         else:
             return - self.distance.astype(np.float32) * 0.1
 
