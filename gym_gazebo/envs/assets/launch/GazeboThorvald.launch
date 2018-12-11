@@ -2,7 +2,7 @@
 
 <launch>
 
-  <include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" />
+  <!--<include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" />-->
 
 
 </launch>

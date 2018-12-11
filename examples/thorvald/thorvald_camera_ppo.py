@@ -62,7 +62,7 @@ seed = 0
 directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
 model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
-model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=599,  tensorboard_log=directory)
+model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=600,  tensorboard_log=directory)
 model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
 model_4 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=9999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
 

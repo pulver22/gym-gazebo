@@ -16,6 +16,7 @@ from sensor_msgs.msg import LaserScan, Image
 from std_srvs.srv import Empty
 from gazebo_msgs.srv import SetModelState, GetModelState
 from gazebo_msgs.msg import ModelState
+from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats, HeaderString
 
@@ -35,6 +36,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
         self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
         self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
+        self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
@@ -50,9 +52,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self._last_obs_header = None
         self._last_lidar_header = None
         self.obs = None
-        self.reward = None
-        self.done = None
-        self.action_space = None
+        self.reward = 0
+        self.done = False
         self.max_episode_steps = 100  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
@@ -61,7 +62,6 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
         self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
         self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
-        self.last50actions = [0] * 50
 
         # Camera setting
         self.img_rows = 84
@@ -86,6 +86,9 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.target_position = [None, None]
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
+        self.last_clock_msg = None
+        self.last_step_ts = None
+        self.skip_time = 500000000  # expressed in nseconds
 
 
 
@@ -102,6 +105,16 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.rospy_time_stop = 0.0
 
         self._seed()
+
+    def clock_callback(self, message):
+        """
+        Callback method for the subscriber of the clock topic
+        :param message:
+        :return:
+        """
+        # self.last_clock_msg = int(str(message.clock.secs) + str(message.clock.nsecs)) / 1e6
+        self.last_clock_msg = int(message.clock.nsecs) / 1e9
+        # print(self.last_clock_msg)
 
     def observation_callback(self, message):
         """
@@ -204,16 +217,19 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         """
 
         self.iterator += 1
-        # print("Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        # print("ROSPY Time difference between step: ", (float(rospy.get_time()) - self.rospy_time_stop), " sec")
+        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        print("[B]ROSPY Time difference between step: ", abs(rospy.Time.now().nsecs - self.rospy_time_stop)*1e-9, " sec")
 
-        # self.time_stop = float(time.time())
-        # self.rospy_time_stop = float(rospy.get_time())
+        self.time_stop = float(time.time())
+        self.rospy_time_stop = float(rospy.Time.now().nsecs)
 
         # print("Time difference between step: ", (self.time_stop - self.time_start), " sec")
         # print("ROSPY Time difference between step: ", (self.rospy_time_stop - self.rospy_time_start) * 1e-9, " sec")
 
 
+        #########################
+        ##       ACTION        ##
+        #########################
         # Unpause simulation
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
@@ -222,17 +238,41 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         except (rospy.ServiceException) as e:
             print("/gazebo/unpause_physics service call failed")
 
-
-
-        #########################
-        ##       ACTION        ##
-        #########################
         # print("  --> Sending action")
-        #TODO: Create an action message
+        # TODO: Create an action message
+        # print("C: ", self.last_clock_msg)
+        # print("TS: ", self.last_step_ts)
+        # before_action_ts = self.last_clock_msg
+        # action_time = self.last_step_ts - before_action_ts
+        # action_iterator = 1
+        timer = abs(rospy.Time.now().nsecs)
+        # timer = self.last_clock_msg
+        # print("timer: ", timer)
+        # delta = abs( abs(rospy.Time.now().nsecs) - timer)
+        # while (abs(rospy.Time.now().nsecs - timer) < self.skip_time):
+            # print("d: ", delta)
+            # print("AI: ", action_iterator)
         self.vel_pub.publish(self.get_velocity_message(action))
+        rospy.sleep(rospy.Duration(0, self.skip_time))
+            # self.last_step_ts = self.last_clock_msg
+            # print("--> ", self.last_step_ts)
+            # action_time = self.last_step_ts - before_action_ts
+            # action_iterator = action_iterator + 1
+            # print("timer2: ", rospy.get_rostime().nsecs)
+            # delta = abs( abs(rospy.Time.now().nsecs) - timer)
+        # print("Action sent")
         # wait until action gets executed
-        rospy.sleep(rospy.Duration(0.5))  # sleep for half second
+        # rospy.sleep(rospy.Duration(1.0))  # sleep for half second
         # print("[", self.iterator, "] Action selected [lin, ang]: ", action)
+
+        # Pause simulation
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            self.pause()
+            # print("Pausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
+
 
         #########################
         ##         STATE       ##
@@ -245,29 +285,22 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             except:
                 rospy.logerr("Problems acquiring the observation")
 
-        # Pause simulation
-        rospy.wait_for_service('/gazebo/pause_physics')
-        try:
-            # resp_pause = pause.call()
-            self.pause()
-            # print("Pausing")
-        except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+
 
         #########################
         ##         DONE        ##
         #########################
         # TODO: check that done is set to True when walls are within safety distance [it does seems not to work]
         # TODO: collision check must be performed using the physic engine
-        laser_ranges = None
-        while laser_ranges is None:
-            try:
-                # print("  --> Acquiring laser data")
-                laser_ranges = self._lidar_msg
-            except:
-                rospy.logerr("Error while reading Lidar")
-
-        self.done, self.reward = self.calculate_collision(laser_ranges)
+        # laser_ranges = None
+        # while laser_ranges is None:
+        #     try:
+        #         # print("  --> Acquiring laser data")
+        #         laser_ranges = self._lidar_msg
+        #     except:
+        #         rospy.logerr("Error while reading Lidar")
+        #
+        # self.done, self.reward = self.calculate_collision(laser_ranges)
 
 
 
@@ -281,7 +314,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             # Calculate actual distance from robot
             self.getGoalDistance()
             # Calculate reward
-            self.reward = self.reward + self.getReward()
+            # self.reward = self.reward + self.getReward()  # NOTE: to use when checking collision in "DONE" block
+            self.reward = self.getReward()
         #print("Reward: ", self.reward)
         # If the reward is greater than zero, we are in proximity of the goal. So Done needs to be set to true
         if self.reward >= 0 or self.iterator == (self.max_episode_steps -1):
@@ -293,14 +327,18 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             # rospy.logwarn("Done: " + str(self.done))
             print("Final distance to goal: ", self.distance)
             if self.reward >= 0:
-                rospy.logerr("The robot reached its target")
+                rospy.logwarn("The robot reached its target")
             else:
                 pass
 
 
 
-        self.rospy_time_start = float(rospy.get_rostime().nsecs)
-        self.time_start = float(time.time())
+        # self.rospy_time_start = float(rospy.get_rostime().nsecs)
+        # self.time_start = float(time.time())
+        # print("[A]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        # print("[A]ROSPY Time difference between step: ", (float(rospy.get_time()) - self.rospy_time_stop), " sec")
+        # self.rospy_time_stop = float(rospy.get_time())
+        # self.time_stop = float(time.time())
 
         return self.ob, self.reward, self.done, {}
 
@@ -364,6 +402,10 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
               self.initial_pose.pose.position.z, "]")
         print("New target: ", self.target_position)
         print("Distance to goal: ", self.distance)
+
+        self.last_step_ts = self.last_clock_msg
+        self.rospy_time_stop = float(rospy.Time.now().nsecs)
+        self.done = False
 
         return self.ob
 
