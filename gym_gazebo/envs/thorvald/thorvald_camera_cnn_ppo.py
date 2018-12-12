@@ -104,6 +104,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.rospy_time_start = 0.0
         self.rospy_time_stop = 0.0
 
+        self.r = rospy.Rate(30)
+
         self._seed()
 
     def clock_callback(self, message):
@@ -113,7 +115,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         :return:
         """
         # self.last_clock_msg = int(str(message.clock.secs) + str(message.clock.nsecs)) / 1e6
-        self.last_clock_msg = int(message.clock.nsecs) / 1e9
+        self.last_clock_msg = int(message.clock.nsecs)
         # print(self.last_clock_msg)
 
     def observation_callback(self, message):
@@ -215,13 +217,15 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             - observation
             - dictionary (#TODO clarify)
         """
-
+        # print("Wallclock2: ", rospy.rostime.is_wallclock())
+        # print("Rospyclock2: ", rospy.rostime.get_rostime().secs )
         self.iterator += 1
         print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        print("[B]ROSPY Time difference between step: ", abs(rospy.Time.now().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        # print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
-        self.rospy_time_stop = float(rospy.Time.now().nsecs)
+        self.rospy_time_stop = float(rospy.get_rostime().nsecs)
 
         # print("Time difference between step: ", (self.time_stop - self.time_start), " sec")
         # print("ROSPY Time difference between step: ", (self.rospy_time_stop - self.rospy_time_start) * 1e-9, " sec")
@@ -231,12 +235,12 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         ##       ACTION        ##
         #########################
         # Unpause simulation
-        rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.unpause()
-            # print("UnPausing")
-        except (rospy.ServiceException) as e:
-            print("/gazebo/unpause_physics service call failed")
+        # rospy.wait_for_service('/gazebo/unpause_physics')
+        # try:
+        #     self.unpause()
+        #     print("UnPausing")
+        # except (rospy.ServiceException) as e:
+        #     print("/gazebo/unpause_physics service call failed")
 
         # print("  --> Sending action")
         # TODO: Create an action message
@@ -245,11 +249,16 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # before_action_ts = self.last_clock_msg
         # action_time = self.last_step_ts - before_action_ts
         # action_iterator = 1
-        timer = abs(rospy.Time.now().nsecs)
+        # timer = abs(rospy.rostime.get_rostime().nsecs)
         # timer = self.last_clock_msg
         # print("timer: ", timer)
         # delta = abs( abs(rospy.Time.now().nsecs) - timer)
-        # while (abs(rospy.Time.now().nsecs - timer) < self.skip_time):
+        # old_clock = self.last_clock_msg
+        # print("Oldclock: ", old_clock)
+
+        # while (abs(rospy.rostime.get_rostime().nsecs - timer) < self.skip_time):
+        #     pass
+            # print("Actualclocl: ", rospy.get_rostime().nsecs)
             # print("d: ", delta)
             # print("AI: ", action_iterator)
         self.vel_pub.publish(self.get_velocity_message(action))
@@ -266,12 +275,12 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # print("[", self.iterator, "] Action selected [lin, ang]: ", action)
 
         # Pause simulation
-        rospy.wait_for_service('/gazebo/pause_physics')
-        try:
-            self.pause()
-            # print("Pausing")
-        except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+        # rospy.wait_for_service('/gazebo/pause_physics')
+        # try:
+        #     self.pause()
+        #     print("Pausing")
+        # except (rospy.ServiceException) as e:
+        #     print("/gazebo/pause_physics service call failed")
 
 
         #########################
@@ -339,7 +348,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # print("[A]ROSPY Time difference between step: ", (float(rospy.get_time()) - self.rospy_time_stop), " sec")
         # self.rospy_time_stop = float(rospy.get_time())
         # self.time_stop = float(time.time())
-
+        # r.sleep()
+        # break
         return self.ob, self.reward, self.done, {}
 
     def reset(self):
