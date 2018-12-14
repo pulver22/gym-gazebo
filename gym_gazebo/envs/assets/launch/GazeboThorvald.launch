@@ -2,11 +2,11 @@
 
 <launch>
 
-  <!--<arg name="use_sim_time" default="true"/>-->
+  <arg name="use_sim_time" default="true"/>
 
-  <!--<include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" >-->
-          <!--&lt;!&ndash;<arg name="use_sim_time" value="$(arg use_sim_time)"/>&ndash;&gt;-->
-  <!--</include>-->
+  <include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" >
+          <!--<arg name="use_sim_time" value="$(arg use_sim_time)"/>-->
+  </include>
 
 
 </launch>

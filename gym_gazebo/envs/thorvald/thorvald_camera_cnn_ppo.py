@@ -78,8 +78,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
         # Environment hyperparameters
         self.initial_pose = None
-        self.min_x = -8.5
-        self.max_x = 4
+        self.min_x = -5.0
+        self.max_x = 5.0
         self.min_y = - -1.5
         self.max_y = 1.5
         self.offset = 3.0
@@ -454,6 +454,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         target_y = np.random.uniform(low=low, high=high)
         # target_x = np.random.uniform(low=self.min_x, high=self.max_x)
         # target_y = np.random.uniform(low=self.min_y, high=self.max_y)
+        target_x = 0.0
+        target_y = 0.0
         target_z = 0.0
         self.target_position = np.array((target_x, target_y, target_z))
 
