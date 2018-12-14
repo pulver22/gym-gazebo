@@ -273,7 +273,7 @@ class GazeboMARATopOrientVisionv0Env(gazebo_env.GazeboEnv):
         # Seed the environment
         self._seed()
 
-        self.envs_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assets_path = os.path.abspath(os.path.join(rospkg.RosPack().get_path("gazebo_domain_randomizer"), os.pardir)) + "/assets"
 
     def tgt_callback(self,msg):
         # print("Whats the target?: ", msg)
@@ -363,7 +363,7 @@ class GazeboMARATopOrientVisionv0Env(gazebo_env.GazeboEnv):
             # Open a file: file
             # os.chdir('../assets/urdf/rubik_cube')
             # print("os: ", os)
-            file = open(self.envs_path + '/assets/urdf/objs/rubik_cube/rubik_cube.sdf' ,mode='r')
+            file = open(self.assets_path + '/models/sdf/rubik_cube.sdf' ,mode='r')
             # read all lines at once
             model_xml = file.read()
             # close the file

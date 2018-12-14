@@ -1,35 +1,146 @@
 
 ## Table of Contents
 - [Installation](#installation)
-	- [Docker (**deprecated**)](#docker)
+	- [Ubuntu 18.04](#ubuntu-1804)
 	- [Ubuntu 16.04](#ubuntu-1604)
 	- [Ubuntu 14.04 (**deprecated**)](#ubuntu-1404)
+	- [Docker (**deprecated**)](#docker)
 
 ## Installation
-### Docker
 
-Build/fetch the container:
+### Ubuntu 18.04
+
+#### Basic requirements
+- ROS Melodic: Desktop-Full Install recommended, includes Gazebo 9.0.0 (http://wiki.ros.org/melodic/Installation/Ubuntu).
+- Gazebo 9.0.0
+
+#### ROS Melodic related dependencies
+```
+sudo apt-get install \
+python-pip python3-vcstool python3-pyqt4 \
+pyqt5-dev-tools \
+libbluetooth-dev libspnav-dev \
+pyqt4-dev-tools libcwiid-dev \
+cmake gcc g++ qt4-qmake libqt4-dev \
+libusb-dev libftdi-dev \
+python3-defusedxml python3-vcstool \
+ros-melodic-octomap-msgs        \
+ros-melodic-joy                 \
+ros-melodic-geodesy             \
+ros-melodic-octomap-ros         \
+ros-melodic-control-toolbox     \
+ros-melodic-pluginlib	       \
+ros-melodic-trajectory-msgs     \
+ros-melodic-control-msgs	       \
+ros-melodic-std-srvs 	       \
+ros-melodic-nodelet	       \
+ros-melodic-urdf		       \
+ros-melodic-rviz		       \
+ros-melodic-kdl-conversions     \
+ros-melodic-eigen-conversions   \
+ros-melodic-tf2-sensor-msgs     \
+ros-melodic-pcl-ros \
+ros-melodic-navigation
+```
+
+#### Install Python Packages:
+```
+sudo pip install gym
+sudo apt-get install python-skimage
+sudo pip install h5py
+pip install tensorflow-gpu (if you have a gpu if not then just pip install tensorflow)
+sudo pip install keras
+```
+
+#### Install Sophus:
+```
+cd ~
+git clone https://github.com/stonier/sophus -b release/0.9.1-kinetic
+cd sophus
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+```
+
+#### Install gym-gazebo
+```
+cd ~
+git clone https://github.com/erlerobot/gym-gazebo
+cd gym-gazebo
+sudo pip install -e .
+```
+
+#### Run bash files, build the ros workspace:
+```
+cd gym-gazebo/gym_gazebo/envs/installation
+bash setup_melodic.bash
+```
+
+#### Execution examples
+##### Run example for qlearn:
+terminal 1
+```
+cd gym-gazebo/gym_gazebo/envs/installation/
+bash turtlebot_setup.bash
+```
+terminal 2
+```
+cd gym-gazebo/examples/turtlebot
+python circuit_turtlebot_lidar_qlearn.py
+```
+
+##### Run example for dqn:
+terminal 1
+```
+cd gym-gazebo/gym_gazebo/envs/installation/
+bash turtlebot_nn_setup.bash
+```
+terminal 2
+```
+cd gym-gazebo/examples/turtlebot
+python circuit_turtlebot_lidar_qlearn.py
+```
+
+
+##### Using Neural Networks
+This part of the installation is required only for the environments using DeepQLearning.
+
+###### Keras and Theano installation
 ```bash
-docker pull erlerobotics/gym-gazebo:latest # to fetch the container
-# docker build -t gym-gazebo .
-```
+# install dependencies
 
-Enter the container
+sudo apt-get install gfortran
+
+# install sript specific dependencies (temporal)
+sudo apt-get install python-skimage
+
+# install Theano
+git clone git://github.com/Theano/Theano.git
+cd Theano/
+sudo python setup.py develop
+
+#isntall Keras
+sudo pip install keras
+```
+dot_parser error fix:
 ```bash
-docker run -it erlerobotics/gym-gazebo
+sudo pip install --upgrade pydot
+sudo pip install --upgrade pyparsing
+```
+###### Enablig GPU for Theano
+
+Follow the instructions [here](http://deeplearning.net/software/theano/install.html#gpu-linux) and change $PATH instead of $CUDA_ROOT.
+
+Working on a clean installation of Ubuntu 18.04 using CUDA 10.0.
+
+The following flags are needed in order to execute in GPU mode, using an alias is recommended.
+```bash
+THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32
 ```
 
-If you wish to run examples that require plugins like cameras, create a fake screen with:
-```
-xvfb-run -s "-screen 0 1400x900x24" bash
-```
-
-If you have an equivalent release of Gazebo installed locally, you can connect to the gzserver inside the container using gzclient GUI by setting the address of the master URI to the containers public address.
-```
-export GAZEBO_MASTER_IP=$(sudo docker inspect --format '{{ .NetworkSettings.IPAddress }}' "id of running container")
-export GAZEBO_MASTER_URI=$GAZEBO_MASTER_IP:11345
-gzclient
-```
+---
 
 ### Ubuntu 16.04
 Basic requirements:
@@ -126,6 +237,8 @@ Run the environment with a sample agent:
 cd gym_gazebo/examples/scripts_turtlebot
 python circuit2_turtlebot_lidar_qlearn.py
 ```
+
+---
 
 ### Ubuntu 14.04
 #### ROS Indigo
@@ -339,4 +452,29 @@ Working on a clean installation of Ubuntu 14.04 using CUDA 7.5.
 The following flags are needed in order to execute in GPU mode, using an alias is recommended.
 ```bash
 THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32
+```
+
+### Docker
+
+Build/fetch the container:
+```bash
+docker pull erlerobotics/gym-gazebo:latest # to fetch the container
+# docker build -t gym-gazebo .
+```
+
+Enter the container
+```bash
+docker run -it erlerobotics/gym-gazebo
+```
+
+If you wish to run examples that require plugins like cameras, create a fake screen with:
+```
+xvfb-run -s "-screen 0 1400x900x24" bash
+```
+
+If you have an equivalent release of Gazebo installed locally, you can connect to the gzserver inside the container using gzclient GUI by setting the address of the master URI to the containers public address.
+```
+export GAZEBO_MASTER_IP=$(sudo docker inspect --format '{{ .NetworkSettings.IPAddress }}' "id of running container")
+export GAZEBO_MASTER_URI=$GAZEBO_MASTER_IP:11345
+gzclient
 ```

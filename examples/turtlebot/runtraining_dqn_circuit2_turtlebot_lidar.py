@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 '''
-Based on: 
+Based on:
 https://github.com/vmayoral/basic_reinforcement_learning
 https://gist.github.com/wingedsheep/4199594b02138dd427c22a540d6d6b8d
 '''
 
 import gym
+from gym import wrappers
 import gym_gazebo
 import time
 from distutils.dir_util import copy_tree
@@ -62,7 +63,7 @@ class DeepQ:
         dropout = 0
         regularizationFactor = 0.01
         model = Sequential()
-        if len(hiddenLayers) == 0: 
+        if len(hiddenLayers) == 0:
             model.add(Dense(self.output_size, input_shape=(self.input_size,), init='lecun_uniform', bias=bias))
             model.add(Activation("linear"))
         else :
@@ -75,7 +76,7 @@ class DeepQ:
                 model.add(LeakyReLU(alpha=0.01))
             else :
                 model.add(Activation(activationType))
-            
+
             for index in range(1, len(hiddenLayers)):
                 layerSize = hiddenLayers[index]
                 if regularizationFactor > 0:
@@ -97,7 +98,7 @@ class DeepQ:
 
     def createModel(self, inputs, outputs, hiddenLayers, activationType, learningRate):
         model = Sequential()
-        if len(hiddenLayers) == 0: 
+        if len(hiddenLayers) == 0:
             model.add(Dense(self.output_size, input_shape=(self.input_size,), init='lecun_uniform'))
             model.add(Activation("linear"))
         else :
@@ -106,7 +107,7 @@ class DeepQ:
                 model.add(LeakyReLU(alpha=0.01))
             else :
                 model.add(Activation(activationType))
-            
+
             for index in range(1, len(hiddenLayers)):
                 # print("adding layer "+str(index))
                 layerSize = hiddenLayers[index]
@@ -168,7 +169,7 @@ class DeepQ:
         """
         if isFinal:
             return reward
-        else : 
+        else :
             return reward + self.discountFactor * self.getMaxQ(qValuesNewState)
 
     # select the action with the highest Q value
@@ -214,7 +215,7 @@ class DeepQ:
             return self.memory.getMemory(self.memory.getCurrentSize() - 1)
 
     def learnOnMiniBatch(self, miniBatchSize, useTargetNetwork=True):
-        # Do not learn until we've got self.learnStart samples        
+        # Do not learn until we've got self.learnStart samples
         if self.memory.getCurrentSize() > self.learnStart:
             # learn in batches of 128
             miniBatch = self.memory.getMiniBatch(miniBatchSize)
@@ -266,7 +267,7 @@ if __name__ == '__main__':
     env = gym.make('GazeboCircuit2TurtlebotLidarNn-v0')
     outdir = '/tmp/gazebo_gym_experiments/'
 
-    weights_path = '/tmp/turtle_c2_dqn_ep900.h5' 
+    weights_path = '/tmp/turtle_c2_dqn_ep900.h5'
     monitor_path = '/tmp/turtle_c2_dqn_ep900'
     params_json  = '/tmp/turtle_c2_dqn_ep900.json'
 

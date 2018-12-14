@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import gym
+from gym import wrappers
 import gym_gazebo
 import time
 import numpy
@@ -59,7 +60,7 @@ if __name__ == '__main__':
 
             nextState = ''.join(map(str, observation))
             nextAction = sarsa.chooseAction(nextState)
-       
+
             #sarsa.learn(state, action, reward, nextState)
             sarsa.learn(state, action, reward, nextState, nextAction)
 

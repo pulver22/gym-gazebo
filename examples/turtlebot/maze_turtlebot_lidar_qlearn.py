@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import gym
+from gym import wrappers
 import gym_gazebo
 import time
 import numpy
@@ -70,12 +71,12 @@ if __name__ == '__main__':
             qlearn.learn(state, action, reward, nextState)
 
             env._flush(force=True)
-            
+
             if not(done):
                 state = nextState
             else:
                 last_time_steps = numpy.append(last_time_steps, [int(i + 1)])
-                break 
+                break
 
         if x%100==0:
             plotter.plot(env)

@@ -284,8 +284,8 @@ class GazeboMARATopOrientVisionCollisionv0Env(gazebo_env.GazeboEnv):
         # Seed the environment
         self._seed()
 
-        self.envs_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
+        self.assets_path = os.path.abspath(os.path.join(rospkg.RosPack().get_path("gazebo_domain_randomizer"), os.pardir)) + "/assets"
+
     def collision_callback(self, message):
         """
         Callback method for the subscriber of Collision data
@@ -387,59 +387,59 @@ class GazeboMARATopOrientVisionCollisionv0Env(gazebo_env.GazeboEnv):
                             reference_frame="")
 
     def addTarget(self):
-            # The idea is to add random target in our case rubik cube and the vision system to detect and find the 3D pose of the cube.
-            # Open a file: file
-            # os.chdir('../assets/urdf/rubik_cube')
-            # print("os: ", os)
-            file = open(self.envs_path + '/assets/urdf/objs/rubik_cube/rubik_cube.sdf' ,mode='r')
-            # read all lines at once
-            model_xml = file.read()
-            # close the file
-            file.close()
+        # The idea is to add random target in our case rubik cube and the vision system to detect and find the 3D pose of the cube.
+        # Open a file: file
+        # os.chdir('../assets/urdf/rubik_cube')
+        # print("os: ", os)
+        file = open(self.assets_path + '/models/sdf/rubik_cube.sdf' ,mode='r')
+        # read all lines at once
+        model_xml = file.read()
+        # close the file
+        file.close()
 
-            rospy.wait_for_service('/gazebo/spawn_urdf_model')
+        rospy.wait_for_service('/gazebo/spawn_urdf_model')
 
-            pose = Pose()
+        pose = Pose()
 
-            pose.position.x = -0.5074649153217804#-0.5074649153217804#random.uniform(-0.3, -0.6);
-            pose.position.y = 0.03617460539210797#random.uniform(-0.02, 0.01)
-            # stay put in Z!!!
-            pose.position.z = 0.72#0.72#0.80 #0.72;
+        pose.position.x = -0.5074649153217804#-0.5074649153217804#random.uniform(-0.3, -0.6);
+        pose.position.y = 0.03617460539210797#random.uniform(-0.02, 0.01)
+        # stay put in Z!!!
+        pose.position.z = 0.72#0.72#0.80 #0.72;
 
-            roll = 0.0#random.uniform(-0.2, 0.6)
-            pitch = 0.0#random.uniform(-0.2, 0.2)
-            yaw = -0.3#-0.3#random.uniform(-0.3, 0.3)
-            new_camera_pose = False
-            q_rubik = quat.from_euler_angles(roll, pitch, yaw)
-            # print("q_rubik: ", q_rubik.x, q_rubik.y, q_rubik.z, q_rubik.w)
+        roll = 0.0#random.uniform(-0.2, 0.6)
+        pitch = 0.0#random.uniform(-0.2, 0.2)
+        yaw = -0.3#-0.3#random.uniform(-0.3, 0.3)
+        new_camera_pose = False
+        q_rubik = quat.from_euler_angles(roll, pitch, yaw)
+        # print("q_rubik: ", q_rubik.x, q_rubik.y, q_rubik.z, q_rubik.w)
 
-            pose.orientation.x = q_rubik.x#0.0#q_rubik[0]
-            pose.orientation.y = q_rubik.y#0.0#q_rubik[1]
-            pose.orientation.z = q_rubik.z#0.0#q_rubik[2]
-            pose.orientation.w = q_rubik.w#0.0#q_rubik[3]
+        pose.orientation.x = q_rubik.x#0.0#q_rubik[0]
+        pose.orientation.y = q_rubik.y#0.0#q_rubik[1]
+        pose.orientation.z = q_rubik.z#0.0#q_rubik[2]
+        pose.orientation.w = q_rubik.w#0.0#q_rubik[3]
 
-            print("Real pose is: ", pose)
-            try:
+        print("Real pose is: ", pose)
+        try:
 
-                self.add_model_sdf(model_name="puzzle_ball_joints",
-                                model_xml=model_xml,
-                                robot_namespace="",
-                                initial_pose=pose,
-                                reference_frame="")
-                print ("service call ok")
-            except:
-                print('error adding model')
+            self.add_model_sdf(model_name="puzzle_ball_joints",
+                            model_xml=model_xml,
+                            robot_namespace="",
+                            initial_pose=pose,
+                            reference_frame="")
+            print ("service call ok")
+        except:
+            print('error adding model')
 
-            self.pub_set_model.publish(ModelState( model_name='puzzle_ball_joints',
-                                pose=pose,
-                                reference_frame="world"))
+        self.pub_set_model.publish(ModelState( model_name='puzzle_ball_joints',
+                            pose=pose,
+                            reference_frame="world"))
 
     def removeTarget(self):
-            rospy.wait_for_service('/gazebo/delete_model')
-            try:
-                self.remove_model(model_name="puzzle_ball_joints")
-            except (rospy.ServiceException) as e:
-                print ("/gazebo/spawn_urdf_model service call failed")
+        rospy.wait_for_service('/gazebo/delete_model')
+        try:
+            self.remove_model(model_name="puzzle_ball_joints")
+        except (rospy.ServiceException) as e:
+            print ("/gazebo/spawn_urdf_model service call failed")
 
     def observation_callback(self, message):
         """
@@ -448,12 +448,12 @@ class GazeboMARATopOrientVisionCollisionv0Env(gazebo_env.GazeboEnv):
         self._observation_msg =  message
 
     def init_time(self, slowness =1, slowness_unit='sec', reset_jnts=True):
-            self.slowness = slowness
-            self.slowness_unit = slowness_unit
-            self.reset_jnts = reset_jnts
-            print("slowness: ", self.slowness)
-            print("slowness_unit: ", self.slowness_unit, "type of variable: ", type(slowness_unit))
-            print("reset joints: ", self.reset_jnts, "type of variable: ", type(self.reset_jnts))
+        self.slowness = slowness
+        self.slowness_unit = slowness_unit
+        self.reset_jnts = reset_jnts
+        print("slowness: ", self.slowness)
+        print("slowness_unit: ", self.slowness_unit, "type of variable: ", type(slowness_unit))
+        print("reset joints: ", self.reset_jnts, "type of variable: ", type(self.reset_jnts))
 
     def setTargetPositions(self, msg):
         """
