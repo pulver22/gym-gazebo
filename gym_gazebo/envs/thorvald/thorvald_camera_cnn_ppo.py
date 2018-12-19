@@ -74,7 +74,10 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # Observation space
         self.observation_high = 255
         self.observation_low = 0
-        self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)
+        # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
+        self.goal_info = np.zeros(shape=(self.img_rows, 1))
+        self.observation_spaze = space.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols + 1, self.img_channels), dtype=np.float16)  # With goal info
+
 
         # Environment hyperparameters
         self.initial_pose = None
@@ -98,6 +101,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.acceptance_distance = 0.20
         self.proximity_distance = 0.5
         self.distance = None
+        self.robot_abs_pose = None
+        self.euler_bearing = None
 
         self.time_start = 0.0
         self.time_stop = 0.0
@@ -283,16 +288,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #     print("/gazebo/pause_physics service call failed")
 
 
-        #########################
-        ##         STATE       ##
-        #########################
-        self.ob = None
-        while (self.ob is None):
-            try:
-                # print("  --> Acquiring observation")
-                self.ob = self.take_observation()
-            except:
-                rospy.logerr("Problems acquiring the observation")
+
 
 
 
@@ -340,6 +336,20 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             else:
                 pass
 
+        #########################
+        ##         STATE       ##
+        #########################
+        self.ob = None
+        while (self.ob is None):
+            try:
+                # print("  --> Acquiring observation")
+                self.ob = self.take_observation()
+            except:
+                rospy.logerr("Problems acquiring the observation")
+
+        self.goal_info[0] = self.distance
+        self.getBearing()
+        self.goal_info[1] = self.euler_bearing[2]  # assuming (R,P,Y)
 
 
         # self.rospy_time_start = float(rospy.get_rostime().nsecs)
@@ -441,6 +451,12 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
         return random_pose
 
+    def getBearing(self):
+        """
+        Get the robot absolute bearing to the goalself.
+        """
+        self.euler_bearing = np.quaternion(self.robot_abs_pose.pose.orientation)  # arg is expressed in quaternion
+
     def getRandomTargetPosition(self):
         """
         Generate a random target within the arena
@@ -467,11 +483,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         :return:
         """
         model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
-        robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
-        robot_abs_pose = np.array(
+        self.robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
+        position = np.array(
             (robot_abs_pose.pose.position.x, robot_abs_pose.pose.position.y, robot_abs_pose.pose.position.z))
 
-        assert robot_abs_pose.shape == self.target_position.shape
+        assert position.shape == self.target_position.shape
         # print("goal_distance", np.linalg.norm(goal_a - goal_b, axis=-1))
         self.distance = np.linalg.norm(robot_abs_pose - self.target_position, axis=-1)
 
@@ -488,4 +504,3 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
           #      return self.positive_reward * 0.01 - self.distance
         else:
             return - self.distance.astype(np.float32) * 0.1
-
