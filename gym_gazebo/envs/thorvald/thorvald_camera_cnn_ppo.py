@@ -351,6 +351,9 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.getBearing()
         self.goal_info[1] = self.euler_bearing[2]  # assuming (R,P,Y)
 
+        # Append the goal information (distance and bearing) to the observation space
+        self.ob = np.append(self.ob, self.goal_info, axis=1)
+
 
         # self.rospy_time_start = float(rospy.get_rostime().nsecs)
         # self.time_start = float(time.time())
