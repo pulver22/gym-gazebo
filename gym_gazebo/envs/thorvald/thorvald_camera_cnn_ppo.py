@@ -226,8 +226,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # print("Wallclock2: ", rospy.rostime.is_wallclock())
         # print("Rospyclock2: ", rospy.rostime.get_rostime().secs )
         self.iterator += 1
-        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
         # print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
