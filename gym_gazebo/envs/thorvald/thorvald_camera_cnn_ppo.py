@@ -57,6 +57,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.max_episode_steps = 100  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
+        self.use_euler_angles = False
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -75,8 +76,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.observation_high = 255
         self.observation_low = 0
         # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
-        self.goal_info = np.zeros(shape=(self.img_rows, 1))
-        self.observation_spaze = space.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols + 1, self.img_channels), dtype=np.float16)  # With goal info
+        self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))  # Arrays need to have same dimesion in order to be concatened
+        self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols + 1, self.img_channels), dtype=np.float16)  # With goal info
 
 
         # Environment hyperparameters
@@ -225,8 +226,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # print("Wallclock2: ", rospy.rostime.is_wallclock())
         # print("Rospyclock2: ", rospy.rostime.get_rostime().secs )
         self.iterator += 1
-        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
         # print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
@@ -348,8 +349,14 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
                 rospy.logerr("Problems acquiring the observation")
 
         self.goal_info[0] = self.distance
-        self.getBearing()
-        self.goal_info[1] = self.euler_bearing[2]  # assuming (R,P,Y)
+        if self.use_euler_angles == True:
+            self.getBearingEuler()
+            self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        else:
+            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
+            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
+            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
+            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
@@ -407,9 +414,25 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
         # Take an observation
         self.ob = None
-        while(self.ob is None):
-            # print("  --> Acquiring first observation")
-            self.ob = self.take_observation()
+        while (self.ob is None):
+            try:
+                # print("  --> Acquiring observation")
+                self.ob = self.take_observation()
+            except:
+                rospy.logerr("Problems acquiring the observation")
+
+        self.goal_info[0] = self.distance
+        if self.use_euler_angles == True:
+            self.getBearingEuler()
+            self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        else:
+            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
+            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
+            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
+            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
+
+        # Append the goal information (distance and bearing) to the observation space
+        self.ob = np.append(self.ob, self.goal_info, axis=1)
 
         # Pause the simulation
         # rospy.wait_for_service('/gazebo/pause_physics')
@@ -454,11 +477,17 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
         return random_pose
 
-    def getBearing(self):
+    def getBearingEuler(self):
         """
         Get the robot absolute bearing to the goalself.
         """
-        self.euler_bearing = np.quaternion(self.robot_abs_pose.pose.orientation)  # arg is expressed in quaternion
+        q = np.quaternion(self.robot_abs_pose.pose.orientation.x,
+                                            self.robot_abs_pose.pose.orientation.y,
+                                            self.robot_abs_pose.pose.orientation.z,
+                                            self.robot_abs_pose.pose.orientation.w)  # arg is expressed in quaternion
+        self.euler_bearing = quaternion.as_euler_angles(q)
+        # print("Quaternion: ", str(self.robot_abs_pose.pose.orientation))
+        # print("Euler: ", str(self.euler_bearing))
 
     def getRandomTargetPosition(self):
         """
@@ -488,11 +517,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
         self.robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
         position = np.array(
-            (robot_abs_pose.pose.position.x, robot_abs_pose.pose.position.y, robot_abs_pose.pose.position.z))
+            (self.robot_abs_pose.pose.position.x, self.robot_abs_pose.pose.position.y, self.robot_abs_pose.pose.position.z))
 
         assert position.shape == self.target_position.shape
         # print("goal_distance", np.linalg.norm(goal_a - goal_b, axis=-1))
-        self.distance = np.linalg.norm(robot_abs_pose - self.target_position, axis=-1)
+        self.distance = np.linalg.norm(position - self.target_position, axis=-1)
 
     def getReward(self):
         """

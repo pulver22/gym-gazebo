@@ -24,8 +24,8 @@ from stable_baselines import PPO1
 from stable_baselines.common.policies import CnnPolicy
 
 
-def policy_cnn(name, ob_space, ac_space):
-    return cnn_policy.CnnPolicy(name=name, ob_space=env.observation_space, ac_space=env.action_space, kind='large')
+def policy_cnn(name, env):
+    return CnnPolicy(name=name, ob_space=env.observation_space, ac_space=env.action_space, feature_extraction="navigation_cnn")
 # if __name__ == '__main__':
 
 
@@ -61,10 +61,12 @@ env = gym.make('GazeboThorvaldCameraEnv-v0')  # Camera + CNN
 seed = 0
 directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
-model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
+# model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
 model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=593,  tensorboard_log=directory)
-model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
-model_4 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=9999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
+# policy = policy_cnn(name="navigation_cnn", env=env)
+# model_2 = PPO1(policy, env, verbose=1, timesteps_per_actorbatch=593,  tensorboard_log=directory)
+# model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
+# model_4 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=9999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
 
 ###########################
 #         TRAIN           #
@@ -91,4 +93,3 @@ model_2.save(save_path=directory + "test_ppo")
 #                     optim_batchsize=64, lam=0.95, schedule='linear')
 timer_stop = time.time()
 print("Time simulation: " + str(timer_stop - timer_start) + " seconds")
-
