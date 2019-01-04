@@ -57,7 +57,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.max_episode_steps = 100  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
-        self.use_euler_angles = False
+        self.use_euler_angles = True
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -73,11 +73,14 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.min_range = 0.5
 
         # Observation space
-        self.observation_high = 255
-        self.observation_low = 0
+        self.observation_high = 255.0
+        self.observation_low = 0.0
         # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
         self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))  # Arrays need to have same dimesion in order to be concatened
-        self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols + 1, self.img_channels), dtype=np.float16)  # With goal info
+        self.observation_space = spaces.Box(low=self.observation_low,
+                                            high=self.observation_high,
+                                            shape=(self.img_rows, self.img_cols + 1, self.img_channels),
+                                            dtype=np.float16)  # With goal info
 
 
         # Environment hyperparameters
@@ -226,8 +229,8 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # print("Wallclock2: ", rospy.rostime.is_wallclock())
         # print("Rospyclock2: ", rospy.rostime.get_rostime().secs )
         self.iterator += 1
-        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
         # print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
@@ -349,14 +352,17 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
                 rospy.logerr("Problems acquiring the observation")
 
         self.goal_info[0] = self.distance
+        # print("Distance: ", str(self.goal_info[0]))
         if self.use_euler_angles == True:
             self.getBearingEuler()
             self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+            # print("Bearing: ", str(self.goal_info[1]))
         else:
             self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
             self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
             self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
             self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
+            # print("Bearing: ", str(self.goal_info[1:6]))
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)

@@ -21,11 +21,11 @@ import json
 from stable_baselines import logger
 from stable_baselines.common import set_global_seeds, tf_util as U
 from stable_baselines import PPO1
-from stable_baselines.common.policies import CnnPolicy
+from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy
 
 
-def policy_cnn(name, env):
-    return CnnPolicy(name=name, ob_space=env.observation_space, ac_space=env.action_space, feature_extraction="navigation_cnn")
+# def policy_cnn(name, env):
+#     return CnnPolicy(name=name, ob_space=env.observation_space, ac_space=env.action_space, feature_extraction="navigation_cnn")
 # if __name__ == '__main__':
 
 
@@ -62,7 +62,8 @@ seed = 0
 directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
 # model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
-model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
+# model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
+model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
 # policy = policy_cnn(name="navigation_cnn", env=env)
 # model_2 = PPO1(policy, env, verbose=1, timesteps_per_actorbatch=593,  tensorboard_log=directory)
 # model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
