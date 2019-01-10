@@ -13,6 +13,12 @@ register(
     max_episode_steps=100
     # More arguments here
 )
+register(
+    id='GazeboThorvaldMlpEnv-v0',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMlpPPOEnv',
+    max_episode_steps=100
+    # More arguments here
+)
 # Turtlebot envs
 register(
     id='GazeboMazeTurtlebotLidar-v0',
