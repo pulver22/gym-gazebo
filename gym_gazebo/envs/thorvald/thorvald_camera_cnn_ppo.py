@@ -358,14 +358,14 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             except:
                 rospy.logerr("Problems acquiring the observation")
 
-        self.goal_info[0] = self.distance / self.max_distance
+        self.goal_info[0] = self.distance #TODO:norm (/ self.max_distance)
         # print("Distance: ", str(self.goal_info[0]))
         if self.use_euler_angles == True:
             self.getBearingEuler()
             # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
             self.getRobotTargetAbsAngle()
             self.getRobotRelOrientation()
-            self.goal_info[1] = self.robot_rel_orientation / (math.pi * 180 / 3.14)
+            self.goal_info[1] = self.robot_rel_orientation #TODO:norm (/ (math.pi * 180 / 3.14))
             # print("Bearing: ", str(self.goal_info[1]))
         else:
             self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
