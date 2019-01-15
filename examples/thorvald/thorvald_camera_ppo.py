@@ -32,7 +32,8 @@ from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, Fee
 
 
 
-env = gym.make('GazeboThorvaldMlpEnv-v0')  # Camera + CNN
+# env = gym.make('GazeboThorvaldMlpEnv-v0')  # Only nav_info
+env = gym.make('GazeboThorvaldCameraEnv-v0')  # Camera + nav_info
 
 ###########################
 #         LOGGER          #
@@ -59,12 +60,12 @@ env = gym.make('GazeboThorvaldMlpEnv-v0')  # Camera + CNN
 ###########################
 
 seed = 0
-directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action"
+directory="/home/pulver/Desktop/ppo_thorvald/test_skip_action/NAVCNN/"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
 # model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
 # model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
-# model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
-model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
+model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
+# model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
 # policy = policy_cnn(name="navigation_cnn", env=env)
 # model_2 = PPO1(policy, env, verbose=1, timesteps_per_actorbatch=593,  tensorboard_log=directory)
 # model_3 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=3997,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/no_positive_reward/")
@@ -76,7 +77,7 @@ model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=500
 
 timer_start = time.time()
 #model_1.learn(total_timesteps=3e5, tb_log_name="999")
-model_2.learn(total_timesteps=1e6)
+model_2.learn(total_timesteps=1e5)
 # # # model_3.learn(total_timesteps=1e6, tb_log_name="3997")
 model_2.save(save_path=directory + "test_ppo")
 # del model_2

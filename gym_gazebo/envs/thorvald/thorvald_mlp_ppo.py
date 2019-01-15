@@ -1,10 +1,12 @@
 import gym
 import rospy
+
 import roslib
 import roslaunch
 import time
 import numpy as np, quaternion
 import cv2
+import math
 
 from gym import utils, spaces
 from gym.utils import seeding
@@ -22,8 +24,7 @@ from rospy_tutorials.msg import Floats, HeaderString
 
 from cv_bridge import CvBridge, CvBridgeError
 
-#from tf.transformations import quaternion_from_euler
-
+from gym_gazebo.envs.thorvald.navigation_utilities import NavigationUtilities
 
 
 
@@ -54,7 +55,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.obs = None
         self.reward = 0
         self.done = False
-        self.max_episode_steps = 100  # limit the max episode step
+        self.max_episode_steps = 200  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
         self.use_euler_angles = True
@@ -75,7 +76,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.min_range = 0.5
 
         # Observation space
-        self.observation_high = np.array([10.0, 3.14], dtype=np.float32)
+        self.observation_high = np.array([10.0, 180.0], dtype=np.float32)
         self.observation_low = np.array([0.0, 0.0], dtype=np.float32)
         # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
         self.goal_info = np.zeros(shape=(2))  # Arrays need to have same dimesion in order to be concatened
@@ -86,10 +87,10 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
 
         # Environment hyperparameters
         self.initial_pose = None
-        self.min_x = -5.0
-        self.max_x = 5.0
-        self.min_y = - -1.5
-        self.max_y = 1.5
+        self.min_x = - 4.0
+        self.max_x = 4.0
+        self.min_y = - 4.0
+        self.max_y = 4.0
         self.offset = 3.0
         self.target_position = [None, None]
         self.model_name = 'thorvald_ii'
@@ -103,11 +104,18 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.reward_range = (-1000.0, 1000)
         self.penalization = - 200
         self.positive_reward = 800
-        self.acceptance_distance = 0.20
+        self.acceptance_distance = 1.0
         self.proximity_distance = 0.5
         self.distance = None
         self.robot_abs_pose = None
+        self.robot_rel_orientation = None
+        self.robot_target_abs_angle = None
         self.euler_bearing = None
+
+        nav_utils = NavigationUtilities(min_x=self.min_x, max_x=self.max_x, min_y=self.min_y, max_y=self.max_y,
+                                        reference_frame=self.reference_frame, model_name=self.model_name,
+                                        distance=self.distance, acceptance_distance=self.acceptance_distance,
+                                        offset=self.offset, positive_reward=self.positive_reward)
 
         self.time_start = 0.0
         self.time_stop = 0.0
@@ -245,12 +253,12 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         ##       ACTION        ##
         #########################
         # Unpause simulation
-        # rospy.wait_for_service('/gazebo/unpause_physics')
-        # try:
-        #     self.unpause()
-        #     print("UnPausing")
-        # except (rospy.ServiceException) as e:
-        #     print("/gazebo/unpause_physics service call failed")
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+            # print("UnPausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/unpause_physics service call failed")
 
         # print("  --> Sending action")
         # TODO: Create an action message
@@ -285,12 +293,12 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         # print("[", self.iterator, "] Action selected [lin, ang]: ", action)
 
         # Pause simulation
-        # rospy.wait_for_service('/gazebo/pause_physics')
-        # try:
-        #     self.pause()
-        #     print("Pausing")
-        # except (rospy.ServiceException) as e:
-        #     print("/gazebo/pause_physics service call failed")
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            self.pause()
+            # print("Pausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
 
 
 
@@ -356,7 +364,10 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         # print("Distance: ", str(self.goal_info[0]))
         if self.use_euler_angles == True:
             self.getBearingEuler()
-            self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+            self.getRobotTargetAbsAngle()
+            self.getRobotRelOrientation()
+            self.goal_info[1] = self.robot_rel_orientation
             # print("Bearing: ", str(self.goal_info[1]))
         else:
             self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
@@ -394,12 +405,12 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.iterator = 0
 
         # Unpause simulation
-        # rospy.wait_for_service('/gazebo/unpause_physics')
-        # try:
-        #     self.unpause()
-        #     print("UnPausing")
-        # except (rospy.ServiceException) as e:
-        #     print("/gazebo/unpause_physics service call failed")
+        rospy.wait_for_service('/gazebo/unpause_physics')
+        try:
+            self.unpause()
+            # print("UnPausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/unpause_physics service call failed")
 
         # Reset robot position
         if self.reset_position is True:
@@ -432,7 +443,11 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.goal_info[0] = self.distance
         if self.use_euler_angles == True:
             self.getBearingEuler()
-            self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+            self.getRobotTargetAbsAngle()
+            self.getRobotRelOrientation()
+            self.goal_info[1] = self.robot_rel_orientation
+            # print("Bearing: ", str(self.goal_info[1]))
         else:
             self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
             self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
@@ -444,12 +459,12 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.ob = self.goal_info
 
         # Pause the simulation
-        # rospy.wait_for_service('/gazebo/pause_physics')
-        # try:
-        #     self.pause()
-        #     print("Pausing")
-        # except (rospy.ServiceException) as e:
-        #     print("/gazebo/pause_physics service call failed")
+        rospy.wait_for_service('/gazebo/pause_physics')
+        try:
+            self.pause()
+            # print("Pausing")
+        except (rospy.ServiceException) as e:
+            print("/gazebo/pause_physics service call failed")
 
 
         # Printing info
@@ -490,13 +505,20 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         """
         Get the robot absolute bearing to the goalself.
         """
-        q = np.quaternion(self.robot_abs_pose.pose.orientation.x,
-                                            self.robot_abs_pose.pose.orientation.y,
-                                            self.robot_abs_pose.pose.orientation.z,
-                                            self.robot_abs_pose.pose.orientation.w)  # arg is expressed in quaternion
+        x = self.robot_abs_pose.pose.orientation.x
+        y = self.robot_abs_pose.pose.orientation.y
+        z = self.robot_abs_pose.pose.orientation.z
+        w = self.robot_abs_pose.pose.orientation.w
+
+        q = np.quaternion(x, y, z, w)# arg is expressed in quaternion
         self.euler_bearing = quaternion.as_euler_angles(q)
+        # FIX: self.euler_beraing[1] is in [0,pi] while self.euler_bearing[0] is in [-pi, pi] and gives the sign
+        if z*w < 0:
+            self.euler_bearing[1] = 2 * math.pi - self.euler_bearing[1]  # cast to [0, 2pi]
         # print("Quaternion: ", str(self.robot_abs_pose.pose.orientation))
-        # print("Euler: ", str(self.euler_bearing))
+        # print(" -> Euler: ", str(self.euler_bearing[1]))
+
+
 
     def getRandomTargetPosition(self):
         """
@@ -545,3 +567,64 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
           #      return self.positive_reward * 0.01 - self.distance
         else:
             return - self.distance.astype(np.float32) * 0.1
+
+    def getRobotTargetAbsAngle(self):
+        """
+        Calculate the angle (in degreed) between the X-axis and the vector connecting the robot to its target
+        :return:
+        """
+        delta_y = self.robot_abs_pose.pose.position.y - self.target_position[1]
+        delta_x = self.robot_abs_pose.pose.position.x - self.target_position[0]
+        # cos_B = delta_x / (math.sqrt(math.pow(delta_x, 2) + math.pow(delta_y, 2)))
+        # sin_B = delta_y / (math.sqrt(math.pow(delta_x, 2) + math.pow(delta_y, 2)))
+        self.robot_target_abs_angle = math.atan2(delta_y, delta_x)
+        # print("Delta_x: ", str(delta_x), " delta_y: ", str(delta_y))
+        # print("[1]", str(self.robot_target_abs_angle))
+        if delta_y <= 0:
+            self.robot_target_abs_angle = self.robot_target_abs_angle + 2 * math.pi
+        # print("[2]", str(self.robot_target_abs_angle))
+        self.robot_target_abs_angle = self.robot_target_abs_angle * 180 / math.pi
+        # print("[3]", str(self.robot_target_abs_angle))
+
+    def getRobotRelOrientation(self):
+        """
+        Get the relative angle between the robot orientation and the vector connecting the robot to its target
+        :return:
+        """
+        sign = -1
+
+        self.robot_rel_orientation = abs(self.robot_target_abs_angle - (self.euler_bearing[1] * 180 / 3.14))
+        # if self.robot_target_abs_angle >= 180:
+        # Make the If statement more readable
+
+        alpha = self.euler_bearing[1] * 180 / 3.14
+        beta = self.robot_target_abs_angle
+        # print("Beta: ", str(beta))
+        # print("Alpha: ", str(alpha))
+        # If the following condition applies, apply a positive sign to the angle in order to distinguish rotation clockwise(-) from anticlockwise (+)
+
+        # if (0.0 <= beta <= 90.0) and (beta <= alpha <= (180.0 + beta)) :
+        #     sign = 1
+        #     rospy.logerr("[1]Signed changed!")
+        # elif (90.0 <= beta <= 180.0) and (beta <= alpha <= 360.0 - (180.0 - beta)):
+        #     sign = 1
+        #     rospy.logerr("[2]Signed changed!")
+        # elif (180.0 <= beta <= 270.0) and (beta <= alpha <= 360.0) or (0.0 <= alpha <= (beta - 180.0)):
+        #     sign = 1
+        #     rospy.logerr("[3]Signed changed!")
+        # elif (270.0 <= beta <=  360.0) and (-(360.0 - beta) <= alpha <= 90.0 + (360.0 - beta)):
+        #     sign = 1
+        #     rospy.logerr("[4]Signed changed!")
+        # else:
+        if (0.0 <= beta <= 90.0) and (beta <= alpha <= (180.0 + beta)) or \
+                ((90.0 <= beta <= 180.0) and (beta <= alpha <= 360.0 - (180.0 - beta))) or \
+                ( (180.0 <= beta <= 270.0) and (beta <= alpha <= 360.0) or (0.0 <= alpha <= (beta - 180.0)) ) or \
+                ((270.0 <= beta <=  360.0) and (-(360.0 - beta) <= alpha <= 90.0 + (360.0 - beta))):
+            sign = 1
+        #     rospy.logerr("Signed changed!")
+        # print("No sign changed")
+        self.robot_rel_orientation = sign * abs(180 -  self.robot_rel_orientation)
+        # if self.robot_target_abs_angle >= 180:
+        #     self.robot_rel_orientation = abs(180 - self.robot_rel_orientation)
+
+        # print("Robot relative orientation: ", str(self.robot_rel_orientation))
