@@ -67,11 +67,22 @@ Refer to [Wiki Testing page](https://github.com/pulver22/gym-gazebo/wiki/Testing
 
 ### Display the simulation
 
-To see what's going on in Gazebo during a simulation, simply run gazebo client:
+To see what's going on in Gazebo during a simulation, run gazebo client. In order to launch the `gzclient` and be able to connect it to the running `gzserver`:
+1. Open a new terminal.
+2. Source the corresponding setup script, which will update the _GAZEBO_MODEL_PATH_ variable: e.g. `source setup_turtlebot.bash`
+3. Export the _GAZEBO_MASTER_URI_, provided by the [gazebo_env](https://github.com/erlerobot/gym-gazebo/blob/7c63c16532f0d8b9acf73663ba7a53f248021453/gym_gazebo/envs/gazebo_env.py#L33). You will see that variable printed at the beginning of every script execution. e.g. `export GAZEBO_MASTER_URI=http://localhost:13853`
 
+**Note**: This instructions are needed now since `gazebo_env` creates a random port for the GAZEBO_MASTER_URI, which allows to run multiple instances of the simulation at the same time. You can remove the following two lines from the environment if you are not planning to launch multiple instances:
+
+```bash
+os.environ["ROS_MASTER_URI"] = "http://localhost:"+self.port
+os.environ["GAZEBO_MASTER_URI"] = "http://localhost:"+self.port_gazebo
 ```
-bash
+
+Finally, launch gzclient.
+```bash
 gzclient
+
 ```
 
 ### Display reward plot

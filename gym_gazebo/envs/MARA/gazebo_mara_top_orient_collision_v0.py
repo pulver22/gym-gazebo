@@ -39,8 +39,8 @@ from baselines.agent.scara_arm.tree_urdf import treeFromFile # For KDL Jacobians
 from PyKDL import Jacobian, Chain, ChainJntToJacSolver, JntArray # For KDL Jacobians
 
 import cv2
-
-import quaternion as quat
+import transforms3d as tf
+import write_csv as csv_file
 
 # from custom baselines repository
 from baselines.agent.utility.general_utils import forward_kinematics, get_ee_points, rotation_from_matrix, \
@@ -84,7 +84,7 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         self.reward_ctrl = None
         self.action_space = None
         self.max_episode_steps = 1000 # now used in all algorithms, this should reflect the lstm step size, otherwqise it restarts two times
-        self.rand_target_thresh = 300
+        self.rand_target_thresh = 40
         self.iterator = 0
         self.reset_iter = 0
         # default to seconds
@@ -213,15 +213,15 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         # self.spec = {'timestep_limit': 5, 'reward_threshold':  950.0,}
         # Subscribe to the appropriate topics, taking into account the particular robot
         # ROS 1 implementation
-        self._pub = rospy.Publisher(JOINT_PUBLISHER, JointTrajectory)
+        self._pub = rospy.Publisher(JOINT_PUBLISHER, JointTrajectory, queue_size=1)
         self._sub = rospy.Subscriber(JOINT_SUBSCRIBER, JointTrajectoryControllerState, self.observation_callback)
         self._sub_coll = rospy.Subscriber('/gazebo_contacts',ContactState, self.collision_callback)
 
-        self._pub_rand_light = rospy.Publisher(RAND_LIGHT_PUBLISHER, stdEmpty)
-        self._pub_rand_sky = rospy.Publisher(RAND_SKY_PUBLISHER, stdEmpty)
-        self._pub_rand_physics = rospy.Publisher(RAND_PHYSICS_PUBLISHER, stdEmpty)
-        self._pub_rand_obstacles = rospy.Publisher(RAND_OBSTACLES_PUBLISHER, stdEmpty)
-        self._pub_link_state = rospy.Publisher(LINK_STATE_PUBLISHER, LinkState)
+        # self._pub_rand_light = rospy.Publisher(RAND_LIGHT_PUBLISHER, stdEmpty, queue_size=1)
+        # self._pub_rand_sky = rospy.Publisher(RAND_SKY_PUBLISHER, stdEmpty, queue_size=1)
+        # self._pub_rand_physics = rospy.Publisher(RAND_PHYSICS_PUBLISHER, stdEmpty, queue_size=1)
+        # self._pub_rand_obstacles = rospy.Publisher(RAND_OBSTACLES_PUBLISHER, stdEmpty, queue_size=1)
+        self._pub_link_state = rospy.Publisher(LINK_STATE_PUBLISHER, LinkState, queue_size=1)
 
         # Initialize a tree structure from the robot urdf.
         #   note that the xacro of the urdf is updated by hand.
@@ -249,7 +249,7 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
         recently also added quaternion to the obs, which has dimension=4
         """
         #
-        self.obs_dim = self.scara_chain.getNrOfJoints() + 9#7 #6 hardcode it for now
+        self.obs_dim = self.scara_chain.getNrOfJoints() + 10#7 #6 hardcode it for now
         # # print(observation, _reward)
 
         # # Here idially we should find the control range of the robot. Unfortunatelly in ROS/KDL there is nothing like this.
@@ -503,33 +503,27 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             roll = 0.0
             pitch = 0.0
             yaw = np.random.uniform(-1.57, 1.57)
-            q = quat.from_euler_angles(roll, pitch, yaw)
-            EE_ROT_TGT = rot_matrix = quat.as_rotation_matrix(q)
+            #tf.taitbryan.euler2quat(z, y, x) --> [w, x, y, z]
+            q = tf.taitbryan.euler2quat(yaw, pitch, roll)
+            EE_ROT_TGT = tf.quaternions.quat2mat(q)
             self.target_orientation = EE_ROT_TGT
             ee_tgt = np.ndarray.flatten(get_ee_points(self.environment['end_effector_points'], EE_POS_TGT, EE_ROT_TGT).T)
 
             ms.pose.position.x = EE_POS_TGT[0,0]
             ms.pose.position.y = EE_POS_TGT[0,1]
             ms.pose.position.z = EE_POS_TGT[0,2]
-            ms.pose.orientation.x = q.x
-            ms.pose.orientation.y = q.y
-            ms.pose.orientation.z = q.z
-            ms.pose.orientation.w = q.w
+            ms.pose.orientation.x = q[1]
+            ms.pose.orientation.y = q[2]
+            ms.pose.orientation.z = q[3]
+            ms.pose.orientation.w = q[0]
 
             if obj_name != "target":
-
-                # ms.model_name = obj_name
-                # rospy.wait_for_service('gazebo/set_model_state')
-                # try:
-                #     self.set_model_pose(ms)
-                # except (rospy.ServiceException) as e:
-                #     print("Error setting the pose of " + obj_name)
-
-                rospy.wait_for_service('/gazebo/delete_model')
+                ms.model_name = obj_name
+                rospy.wait_for_service('gazebo/set_model_state')
                 try:
-                    self.remove_model(obj_name)
-                except rospy.ServiceException as e:
-                    print("Error removing model")
+                    self.set_model_pose(ms)
+                except (rospy.ServiceException) as e:
+                    print("Error setting the pose of " + obj_name)
 
                 self.spawnModel(obj_name, self.obj_path, ms.pose)
 
@@ -545,27 +539,7 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             ms.pose.orientation.z = 0;
             ms.pose.orientation.w = 0;
 
-        # self._pub_link_state.publish( LinkState(link_name="target_link", pose=ms.pose, reference_frame="world") )
-
-        file_xml = open(self.assets_path + '/models/urdf/target_point.urdf' ,mode='r')
-        model_sdf = file_xml.read()
-        file_xml.close()
-        rospy.wait_for_service('/gazebo/delete_model')
-        try:
-            self.remove_model("target")
-        except rospy.ServiceException as e:
-            print("Error removing model")
-
-        rospy.wait_for_service('/gazebo/spawn_urdf_model')
-        try:
-            self.add_model_urdf(model_name="target",
-                                model_xml=model_sdf,
-                                robot_namespace="",
-                                initial_pose=ms.pose,
-                                reference_frame="world")
-        except rospy.ServiceException as e:
-            print('Error adding urdf model')
-
+        self._pub_link_state.publish( LinkState(link_name="target_link", pose=ms.pose, reference_frame="world") )
         self.realgoal = ee_tgt
 
     def get_trajectory_message(self, action, robot_id=0):
@@ -711,21 +685,21 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             # # I need this calculations for the new reward function, need to send them back to the run mara or calculate them here
             # current_quaternion = quaternion_from_matrix(rotation_matrix)
             # tgt_quartenion = quaternion_from_matrix(self.target_orientation)
-
-            current_quaternion = quat.from_rotation_matrix(rotation_matrix)
-            tgt_quartenion = quat.from_rotation_matrix(self.target_orientation)
+            current_quaternion = tf.quaternions.mat2quat(rot) #[w, x, y ,z]
+            tgt_quartenion = tf.quaternions.mat2quat(self.target_orientation)
 
             # A  = np.vstack([current_quaternion, np.ones(len(current_quaternion))]).T
             #quat_error = np.linalg.lstsq(A, tgt_quartenion)[0]
 
             quat_error = current_quaternion * tgt_quartenion.conjugate()
-            rot_vec_err = quat.as_rotation_vector(quat_error)
+            vec, angle = tf.quaternions.quat2axangle(quat_error)
+            rot_vec_err = [vec[0], vec[1], vec[2], np.float64(angle)]
 
             # convert quat to np arrays
-            quat_error = quat.as_float_array(quat_error)
+            # quat_error = np.asarray(quat_error, dtype=np.quaternion).view((np.double, 4))
 
             # RK:  revisit this later, we only take one angle difference here!
-            angle_diff = 2 * np.arccos(np.clip(quat_error[..., 0], -1., 1.))
+            # angle_diff = 2 * np.arccos(np.clip(quat_error[..., 0], -1., 1.))
 
             current_ee_tgt = np.ndarray.flatten(get_ee_points(self.environment['end_effector_points'],
                                                               trans,
@@ -799,22 +773,31 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             rospy.wait_for_service('/gazebo/reset_simulation')
             try:
                 self.reset_proxy()
+
+                pose = Pose()
+                pose.position.x = self.realgoal[0];
+                pose.position.y = self.realgoal[1];
+                pose.position.z = self.realgoal[2];
+                pose.orientation.x = 0;
+                pose.orientation.y= 0;
+                pose.orientation.z = 0;
+                pose.orientation.w = 0;
+                self._pub_link_state.publish( LinkState(link_name="target_link", pose=pose, reference_frame="world") )
+
                 # print("RESET")
                 # time.sleep(2)
             except (rospy.ServiceException) as e:
                 print ("/gazebo/reset_simulation service call failed")
-                # self.goToInit()
-                # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_world', Empty)
 
         else:
             # here we want to fetch the positions of the end-effector which are nr_dof:nr_dof+3
             # here is the distance block
-            if abs(self.reward_dist) < 0.01:
-                self.reward = 1 + self.reward_dist # Make the reward increase as the distance decreases
-                print("Reward dist is: ", self.reward)
+            if abs(self.reward_dist) < 0.005:
+                self.reward = 2 + self.reward_dist # Make the reward increase as the distance decreases
                 self.reset_iter += 1
-                if abs(self.reward_orient)<0.01:
-                    self.reward = 5 + self.reward + self.reward_orient
+                print("Reward dist is: ", self.reward)
+                if abs(self.reward_orient) < 0.005:
+                    self.reward = (2 + self.reward + self.reward_orient) * 2
                     print("Reward dist + orient is: ", self.reward)
                 else:
                     self.reward = self.reward + self.reward_orient
@@ -823,7 +806,7 @@ class GazeboMARATopOrientCollisionv0Env(gazebo_env.GazeboEnv):
             else:
                 self.reward = self.reward_dist
 
-        done = bool((abs(self.reward_dist) < 0.005) or (self.iterator>self.max_episode_steps) or (abs(self.reward_orient) < 0.005) )
+        done = bool((abs(self.reward_dist) < 0.001) or (self.iterator>self.max_episode_steps) or (abs(self.reward_orient) < 0.001) )
         # done = bool( (abs(self.reward_dist) < 0.005) or (self.iterator > self.max_episode_steps) )
 
         # Return the corresponding observations, rewards, etc.

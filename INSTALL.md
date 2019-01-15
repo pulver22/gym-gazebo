@@ -40,7 +40,8 @@ ros-melodic-kdl-conversions     \
 ros-melodic-eigen-conversions   \
 ros-melodic-tf2-sensor-msgs     \
 ros-melodic-pcl-ros \
-ros-melodic-navigation
+ros-melodic-navigation \
+ros-melodic-sophus
 ```
 
 #### Install Python Packages:
@@ -50,18 +51,6 @@ sudo apt-get install python-skimage
 sudo pip install h5py
 pip install tensorflow-gpu (if you have a gpu if not then just pip install tensorflow)
 sudo pip install keras
-```
-
-#### Install Sophus:
-```
-cd ~
-git clone https://github.com/stonier/sophus -b release/0.9.1-kinetic
-cd sophus
-mkdir build
-cd build
-cmake ..
-make
-sudo make install
 ```
 
 #### Install gym-gazebo
