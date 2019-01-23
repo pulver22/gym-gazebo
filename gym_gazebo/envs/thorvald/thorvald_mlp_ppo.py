@@ -58,7 +58,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.max_episode_steps = 200  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
-        self.use_euler_angles = True
+        self.use_cosine_sine = True
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -362,18 +362,18 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
 
         self.goal_info[0] = self.distance
         # print("Distance: ", str(self.goal_info[0]))
-        if self.use_euler_angles == True:
-            self.getBearingEuler()
-            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
-            self.getRobotTargetAbsAngle()
-            self.getRobotRelOrientation()
-            self.goal_info[1] = self.robot_rel_orientation
-            # print("Bearing: ", str(self.goal_info[1]))
-        else:
-            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
-            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
-            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
-            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
+
+        self.getBearingEuler()
+        # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        self.getRobotTargetAbsAngle()
+        self.getRobotRelOrientation()
+        self.goal_info[1] = self.robot_rel_orientation
+        if self.use_cosine_sine == True:
+            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # Normalise the sine and cosine
+            self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
             # print("Bearing: ", str(self.goal_info[1:6]))
 
         # Append the goal information (distance and bearing) to the observation space
@@ -441,18 +441,18 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         #         rospy.logerr("Problems acquiring the observation")
 
         self.goal_info[0] = self.distance
-        if self.use_euler_angles == True:
-            self.getBearingEuler()
-            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
-            self.getRobotTargetAbsAngle()
-            self.getRobotRelOrientation()
-            self.goal_info[1] = self.robot_rel_orientation
-            # print("Bearing: ", str(self.goal_info[1]))
-        else:
-            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
-            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
-            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
-            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
+        self.getBearingEuler()
+        # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        self.getRobotTargetAbsAngle()
+        self.getRobotRelOrientation()
+        self.goal_info[1] = self.robot_rel_orientation
+        if self.use_cosine_sine == True:
+            self.goal_info[1] = math.cos(
+                self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # Normalise the sine and cosine
+            self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
 
         # Append the goal information (distance and bearing) to the observation space
         # self.ob = np.append(self.ob, self.goal_info, axis=1)

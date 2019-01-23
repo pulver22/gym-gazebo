@@ -56,6 +56,7 @@ class GazeboEnv(gym.Env):
         # Sleep for few seconds in order to setup the clock
         time.sleep(5)
 
+
         self.gzclient_pid = 0
 
         # Launch the simulation with the given launchfile name

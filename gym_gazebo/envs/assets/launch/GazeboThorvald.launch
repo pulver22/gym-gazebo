@@ -2,11 +2,13 @@
 
 <launch>
 
-  <arg name="use_sim_time" default="true"/>
+    <arg name="use_sim_time" default="true"/>
+    <include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" >
+              <!--<arg name="use_sim_time" value="$(arg use_sim_time)"/>-->
+    </include>
 
-  <include file="$(find ncnr_gazebo)/launch/ncnr_bringup.launch" >
-          <!--<arg name="use_sim_time" value="$(arg use_sim_time)"/>-->
-  </include>
+    <!--<include file="$(find contact_monitor)/launch/contactMonitor.launch">-->
+    <!--</include>-->
 
 
 </launch>

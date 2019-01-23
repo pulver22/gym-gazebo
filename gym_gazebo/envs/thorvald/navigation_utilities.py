@@ -174,3 +174,13 @@ class NavigationUtilities():
         #     self.robot_rel_orientation = abs(180 - self.robot_rel_orientation)
 
         # print("Robot relative orientation: ", str(self.robot_rel_orientation))
+
+    def normalise(self, value, min, max):
+        """
+        Return a normalised value
+        :param value:
+        :param min:
+        :param max:
+        :return:
+        """
+        return (value - min)/(max - min)

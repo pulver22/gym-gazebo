@@ -16,7 +16,7 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan, Image
 from std_srvs.srv import Empty
 from gazebo_msgs.srv import SetModelState, GetModelState
-from gazebo_msgs.msg import ModelState
+from gazebo_msgs.msg import ModelState, ContactState
 from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats, HeaderString
@@ -38,6 +38,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
         self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
+        self.collision_sub = rospy.Subscriber('/fag', ContactState, self.contact_callback)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
@@ -55,10 +56,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.obs = None
         self.reward = 0
         self.done = False
-        self.max_episode_steps = 200  # limit the max episode step
+        self.max_episode_steps = 500  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
-        self.use_euler_angles = True
+        self.use_cosine_sine = False
+        self.fake_images = True
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -113,6 +115,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.robot_rel_orientation = None
         self.robot_target_abs_angle = None
         self.euler_bearing = None
+        self.last_collision = None
 
         self.time_start = 0.0
         self.time_stop = 0.0
@@ -152,6 +155,18 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             self._lidar_msg =  np.array(message.ranges)
         else:
             ROS_ERROR("Not receiving lidar readings")
+
+    def contact_callback(self, message):
+        """
+        Parse ContactState messages for possible collision (filter those involving the ground)
+        :param message:
+        :return:
+        """
+
+        if "ground_plane" in message.collision1_name or "ground_plane" in message.collision2_name:
+            pass
+        elif "thorvald_ii" in message.collision1_name or "thorvald_ii" in message.collision2_name:
+            self.last_collision = message
 
 
     def take_observation(self):
@@ -195,7 +210,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         action_msg.angular.z = action[1]
         return action_msg
 
-    def calculate_collision(self,data):
+    def calculate_collision_lidar(self,data):
         """
         Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance
         :param data:
@@ -315,7 +330,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #     except:
         #         rospy.logerr("Error while reading Lidar")
         #
-        # self.done, self.reward = self.calculate_collision(laser_ranges)
+        # self.done, self.reward = self.calculate_collision_lidar(laser_ranges)
 
 
 
@@ -331,9 +346,10 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             # Calculate reward
             # self.reward = self.reward + self.getReward()  # NOTE: to use when checking collision in "DONE" block
             self.reward = self.getReward()
+            self.reward += self.getCollisionPenalty()
         #print("Reward: ", self.reward)
         # If the reward is greater than zero, we are in proximity of the goal. So Done needs to be set to true
-        if self.reward >= 0 or self.iterator == (self.max_episode_steps -1):
+        if self.reward >= 0 or self.iterator == (self.max_episode_steps -1) or self.reward <= -10.0:
             self.done = True
 
 
@@ -342,7 +358,9 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             # rospy.logwarn("Done: " + str(self.done))
             print("Final distance to goal: ", self.distance)
             if self.reward >= 0:
-                rospy.logwarn("The robot reached its target")
+                rospy.logwarn(" -> The robot reached its target.")
+            elif self.reward <= -10.0:
+                rospy.logerr("  -> The robot crashed into a static obstacle.")
             else:
                 pass
 
@@ -353,26 +371,29 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         while (self.ob is None):
             try:
                 # print("  --> Acquiring observation")
-                # self.ob = self.take_observation()
-                self.ob = np.ones(shape=(84, 84, 1))  #DEBUG
+                if self.fake_images == True:
+                    self.ob = np.zeros(shape=(84, 84, 1))  # DEBUG
+                else:
+                    self.ob = self.take_observation()
             except:
                 rospy.logerr("Problems acquiring the observation")
 
         self.goal_info[0] = self.distance #TODO:norm (/ self.max_distance)
         # print("Distance: ", str(self.goal_info[0]))
-        if self.use_euler_angles == True:
-            self.getBearingEuler()
-            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
-            self.getRobotTargetAbsAngle()
-            self.getRobotRelOrientation()
-            self.goal_info[1] = self.robot_rel_orientation #TODO:norm (/ (math.pi * 180 / 3.14))
-            # print("Bearing: ", str(self.goal_info[1]))
-        else:
-            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
-            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
-            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
-            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
-            # print("Bearing: ", str(self.goal_info[1:6]))
+
+        self.getBearingEuler()
+        # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        self.getRobotTargetAbsAngle()
+        self.getRobotRelOrientation()
+        self.goal_info[1] = self.robot_rel_orientation
+        self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
+        if self.use_cosine_sine == True:
+            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0) # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # Normalise the sine and cosine
+            self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
+            # print("Bearing: ", self.robot_rel_orientation, ",",str(self.goal_info[1]), ", ", str(self.goal_info[2]))
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
@@ -432,24 +453,27 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.ob = None
         while (self.ob is None):
             try:
-                # print("  --> Acquiring observation")
-                self.ob = self.take_observation()
+                if self.fake_images == True:
+                    self.ob = np.zeros(shape=(84, 84, 1))  # DEBUG
+                else:
+                    self.ob = self.take_observation()
             except:
                 rospy.logerr("Problems acquiring the observation")
 
         self.goal_info[0] = self.distance
-        if self.use_euler_angles == True:
-            self.getBearingEuler()
-            # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
-            self.getRobotTargetAbsAngle()
-            self.getRobotRelOrientation()
-            self.goal_info[1] = self.robot_rel_orientation
-            # print("Bearing: ", str(self.goal_info[1]))
-        else:
-            self.goal_info[1] = self.robot_abs_pose.pose.orientation.x
-            self.goal_info[2] = self.robot_abs_pose.pose.orientation.y
-            self.goal_info[3] = self.robot_abs_pose.pose.orientation.z
-            self.goal_info[4] = self.robot_abs_pose.pose.orientation.w
+
+        self.getBearingEuler()
+        # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
+        self.getRobotTargetAbsAngle()
+        self.getRobotRelOrientation()
+        self.goal_info[1] = self.robot_rel_orientation
+        if self.use_cosine_sine == True:
+            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # Normalise the sine and cosine
+            self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
+
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
@@ -623,3 +647,29 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         #     self.robot_rel_orientation = abs(180 - self.robot_rel_orientation)
 
         # print("Robot relative orientation: ", str(self.robot_rel_orientation))
+
+    def normalise(self, value, min, max):
+        """
+        Return a normalised value
+        :param value:
+        :param min:
+        :param max:
+        :return:
+        """
+        return (value - min)/(max - min)
+
+    def getCollisionPenalty(self):
+        """
+        Check for collision and penalise them
+        :return:
+        """
+        penalty = 0.0
+        if self.last_collision != None:
+            for wrench in self.last_collision.wrenches:
+                penalty += 0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2))
+
+        # if penalty > 0.0:
+            # rospy.logerr("Collision detected, penalty = %s", penalty)
+        # Reset last collision to prevent to use old data
+        self.last_collision = None
+        return -penalty
