@@ -15,7 +15,7 @@ class GazeboEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, launchfile):
+    def __init__(self, launchfile, contactlaunchfile):
         self.last_clock_msg = Clock()
 
         random_number = random.randint(10000, 15000)
@@ -52,6 +52,13 @@ class GazeboEnv(gym.Env):
 
         self._roslaunch = subprocess.Popen([sys.executable, os.path.join(ros_path, b"roslaunch"), "-p", self.port, fullpath])
         print ("Gazebo launched!")
+
+        time.sleep(5)
+
+        if not os.path.exists(contactlaunchfile):
+            raise IOError("File "+fullpath+" does not exist")
+        self._contactlaunch = subprocess.Popen([sys.executable, os.path.join(ros_path, b"roslaunch"), "-p", self.port, contactlaunchfile])
+        print("ContactMonitor!")
 
         # Sleep for few seconds in order to setup the clock
         time.sleep(5)
