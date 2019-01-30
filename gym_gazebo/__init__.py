@@ -14,8 +14,20 @@ register(
     # More arguments here
 )
 register(
+    id='GazeboThorvaldCameraEnv-v1',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldCameraCnnPPOEnvSlim',
+    max_episode_steps=200
+    # More arguments here
+)
+register(
     id='GazeboThorvaldMlpEnv-v0',
     entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMlpPPOEnv',
+    max_episode_steps=200
+    # More arguments here
+)
+register(
+    id='GazeboThorvaldMlpEnv-v1',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMlpPPOEnvSlim',
     max_episode_steps=200
     # More arguments here
 )

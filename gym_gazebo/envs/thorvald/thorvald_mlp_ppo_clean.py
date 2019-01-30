@@ -28,11 +28,11 @@ from gym_gazebo.envs.thorvald.navigation_utilities import NavigationUtilities
 
 
 
-class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
+class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
 
     def __init__(self):
         # Launch the simulation with the given launchfile name
-        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch")
+        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
         self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
         # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
         self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
@@ -181,40 +181,6 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         # print("  --> Observation acquired")
         return obs_message
 
-    def get_velocity_message(self, action):
-        """
-        Helper function.
-        Wraps an action vector into a Twist message.
-        """
-        # Set up a Twist message to publish.
-        action_msg = Twist()
-        action_msg.linear.x = action[0]
-        action_msg.angular.z = action[1]
-        return action_msg
-
-    def calculate_collision(self,data):
-        """
-        Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance
-        :param data:
-        :return:
-        """
-        done = False
-        reward = 0.0
-        for i, item in enumerate(data):
-
-            # If the laser reading return an infinite distance, clip it to 100 meters
-            if (data[i] == np.inf):
-                data[i] = 100
-
-            # If the laser reading returns not a number, clip it to 0 meters
-            if np.isnan(data[i]):
-                data[i] == 0
-
-            # If the obstacles is closer than the minimum safety distance, stop the episode
-            if (self.min_range > data[i] > 0):
-                rospy.logerr("Collision detected")
-                return True, self.penalization
-        return done, reward
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -252,7 +218,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
                 print("/gazebo/unpause_physics service call failed")
 
 
-        self.vel_pub.publish(self.get_velocity_message(action))
+        self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
         rospy.sleep(rospy.Duration(0, self.skip_time))
 
 
@@ -272,7 +238,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         # Calculate actual distance from robot
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
-        self.goal_info[0] = self.distance
+        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.robot_target_abs_angle = self.nav_utils.getRobotTargetAbsAngle(self.robot_abs_pose, self.target_position)
@@ -342,7 +308,7 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
         self.target_position = self.nav_utils.getRandomTargetPosition(self.initial_pose)
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance()
-        self.goal_info[0] = self.distance
+        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
 
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
@@ -353,8 +319,8 @@ class GazeboThorvaldMlpPPOEnv(gazebo_env.GazeboEnv):
             self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
             self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
             # Normalise the sine and cosine
-            self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
-            self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
+            self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = self.goal_info

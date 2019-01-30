@@ -67,6 +67,9 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.skip_time = 500000000  # expressed in nseconds
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
+        self.use_cosine_sine = False
+        self.fake_images = True
+        self.collision_detection = False
         ##########################
 
         self._observation_msg = None
@@ -78,9 +81,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.done = False
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.reset_position = True
-        self.use_cosine_sine = True
-        self.fake_images = False
-        self.collision_detection = True
+
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -382,10 +383,13 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         self.getRobotTargetAbsAngle()
         self.getRobotRelOrientation()
         self.goal_info[1] = self.robot_rel_orientation
+        # print("Orientation", self.goal_info[1])
         self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
             self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0) # angles must be expressed in radiants
             self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # print("   Cos", self.goal_info[1])
+            # print("   Sin", self.goal_info[2])
             # Normalise the sine and cosine
             self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
@@ -418,12 +422,12 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
-        msg = None
-        while msg == None:
-            msg = rospy.wait_for_message("/fag", ContactState)
-            print("Waiting")
-
         print("New episode")
+
+
+        # Reset the step iterator
+        self.iterator = 0
+
 
         # rospy.wait_for_service('/gazebo/reset_simulation')
         # try:
@@ -431,8 +435,11 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
         # except (rospy.ServiceException) as e:
         #     print ("/gazebo/reset_simulation service call failed")
 
-        # Reset the step iterator
-        self.iterator = 0
+        msg = None
+        while msg == None:
+            msg = rospy.wait_for_message("/fag", ContactState)
+            print("Waiting")
+
 
         # Unpause simulation
         # rospy.wait_for_service('/gazebo/unpause_physics')
@@ -476,16 +483,20 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             except:
                 rospy.logerr("Problems acquiring the observation")
 
-        self.goal_info[0] = self.distance
+        self.goal_info[0] = self.normalise(value=self.distance, min=0.0, max=self.max_distance)
 
         self.getBearingEuler()
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.getRobotTargetAbsAngle()
         self.getRobotRelOrientation()
         self.goal_info[1] = self.robot_rel_orientation
+        # print("Orientation", self.goal_info[1])
+        self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
             self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
             self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            # print("   Cos", self.goal_info[1])
+            # print("   Sin", self.goal_info[2])
             # Normalise the sine and cosine
             self.goal_info[1] = self.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.normalise(value=self.goal_info[2], min=-1.0, max=1.0)

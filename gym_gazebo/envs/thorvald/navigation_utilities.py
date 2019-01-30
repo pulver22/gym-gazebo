@@ -2,13 +2,14 @@ import rospy
 import numpy as np, quaternion
 import math
 
-from gazebo_msgs.msg import ModelState
+from gazebo_msgs.msg import ModelState,  ModelStates
 from gazebo_msgs.srv import SetModelState, GetModelState
+from geometry_msgs.msg import Twist
 
 
 class NavigationUtilities():
     def __init__(self, min_x, max_x, min_y, max_y, reference_frame, model_name,
-               distance, acceptance_distance, offset, positive_reward):
+               proximity_distance, acceptance_distance, offset, positive_reward):
         self.min_x = min_x
         self.max_y = max_y
         self.min_y = min_y
@@ -16,12 +17,13 @@ class NavigationUtilities():
         self.reference_frame = reference_frame
         self.model_name = model_name
         self.acceptance_distance = acceptance_distance
+        self.proximity_distance = proximity_distance
         self.offset = offset
         self.positive_reward = positive_reward
 
 
 
-    def getRandomPosition(self):
+    def getRandomRobotPosition(self):
         random_pose = ModelState()
 
         tmp_x = np.random.uniform(low=self.min_x, high=self.max_x)
@@ -43,7 +45,40 @@ class NavigationUtilities():
 
         return random_pose
 
+    def get_velocity_message(self, action):
+        """
+        Helper function.
+        Wraps an action vector into a Twist message.
+        """
+        # Set up a Twist message to publish.
+        action_msg = Twist()
+        action_msg.linear.x = action[0]
+        action_msg.angular.z = action[1]
+        return action_msg
 
+    def calculate_collision_from_lidar(self,data):
+        """
+        Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance
+        :param data:
+        :return:
+        """
+        done = False
+        reward = 0.0
+        for i, item in enumerate(data):
+
+            # If the laser reading return an infinite distance, clip it to 100 meters
+            if (data[i] == np.inf):
+                data[i] = 100
+
+            # If the laser reading returns not a number, clip it to 0 meters
+            if np.isnan(data[i]):
+                data[i] == 0
+
+            # If the obstacles is closer than the minimum safety distance, stop the episode
+            if (self.min_range > data[i] > 0):
+                rospy.logerr("Collision detected")
+                return True, self.penalization
+        return done, reward
 
     def getRandomTargetPosition(self, initial_pose):
         """
@@ -65,7 +100,7 @@ class NavigationUtilities():
 
     def getRobotAbsPose(self):
         model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
-        robot_abs_pose = model_coordinates(self.model_name, self.reference_frame)
+        return model_coordinates(self.model_name, self.reference_frame)
 
     def getGoalDistance(self, robot_abs_pose, target_position):
         """
@@ -109,7 +144,7 @@ class NavigationUtilities():
         euler_bearing = quaternion.as_euler_angles(q)
         # FIX: self.euler_beraing[1] is in [0,pi] while self.euler_bearing[0] is in [-pi, pi] and gives the sign
         if z*w < 0:
-            euler_bearing[1] = 2 * math.pi - self.euler_bearing[1]  # cast to [0, 2pi]
+            euler_bearing[1] = 2 * math.pi - euler_bearing[1]  # cast to [0, 2pi]
         # print("Quaternion: ", str(self.robot_abs_pose.pose.orientation))
         # print(" -> Euler: ", str(self.euler_bearing[1]))
         return euler_bearing
@@ -184,3 +219,33 @@ class NavigationUtilities():
         :return:
         """
         return (value - min)/(max - min)
+
+    def getCollisionPenalty(self, last_collision):
+        """
+        Check for collision and penalise them
+        :return:
+        """
+        penalty = 0.0
+        if last_collision != None:
+            for wrench in last_collision.wrenches:
+                penalty += min(0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2)), 10)
+
+        return -penalty
+
+    def checkRobotPose(self, robot_pose):
+        """
+        Check if the robot is within an object
+        :return:
+        """
+        objects_msg = None
+        while objects_msg == None:
+            objects_msg = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+
+
+        for i in range(0, len(objects_msg.name)):
+            # print("Checking pose ", (i+1), "of", len(objects_msg.name))
+            if (objects_msg.pose[i].position.x - self.proximity_distance < robot_pose.pose.position.x < objects_msg.pose[i].position.x + self.proximity_distance):
+                if (objects_msg.pose[i].position.y - self.proximity_distance < robot_pose.pose.position.y < objects_msg.pose[i].position.y + self.proximity_distance):
+                    return False
+
+        return True
