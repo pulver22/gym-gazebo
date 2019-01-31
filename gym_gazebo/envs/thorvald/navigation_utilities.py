@@ -195,8 +195,9 @@ class NavigationUtilities():
 
         alpha = robot_abs_bearing * 180 / 3.14
         beta = robot_target_abs_angle
-        # print("Beta: ", str(beta))
-        # print("Alpha: ", str(alpha))
+        print("-----")
+        print("Beta: ", str(beta))
+        print("Alpha: ", str(alpha))
         # If the following condition applies, apply a positive sign to the angle in order to distinguish rotation clockwise(-) from anticlockwise (+)
 
         # if (0.0 <= beta <= 90.0) and (beta <= alpha <= (180.0 + beta)) :
@@ -215,9 +216,9 @@ class NavigationUtilities():
         if (0.0 <= beta <= 90.0) and (beta <= alpha <= (180.0 + beta)) or \
                 ((90.0 <= beta <= 180.0) and (beta <= alpha <= 360.0 - (180.0 - beta))) or \
                 ((180.0 <= beta <= 270.0) and (beta <= alpha <= 360.0) or (0.0 <= alpha <= (beta - 180.0))) or \
-                ((270.0 <= beta <= 360.0) and (-(360.0 - beta) <= alpha <= 90.0 + (360.0 - beta))):
+                ((270.0 <= beta <= 360.0) and (-(360.0 - beta) <= alpha <= abs(180.0 - (360.0 - beta)))):
             sign = 1
-        #     rospy.logerr("Signed changed!")
+            rospy.logerr("Signed changed!")
         # print("No sign changed")
         return sign * abs(180 - robot_rel_orientation)
         # if self.robot_target_abs_angle >= 180:
@@ -264,3 +265,21 @@ class NavigationUtilities():
                     return False
 
         return True
+
+    def controller(self,goal_info):
+        """
+        Generate an action given the observation
+        :param goal_info: an ndarray containing distance from goal and relative angle
+        :return:
+        """
+        action = Twist()
+        # if the sin is positive, the robot must rotate towards its left
+        action.linear.x = 0.2
+        if goal_info[2] > 0.5:
+            action.angular.z = 0.2
+            action_str = "Left"
+        else:
+            action.angular.z = -0.2
+            action_str = "Right"
+        print("[C] Action: ", action_str)
+        return action

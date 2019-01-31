@@ -70,6 +70,7 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.collision_detection = False
         self.synch_mode = True
         self.reset_position = True
+        self.fake_controller = True
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
                                       "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
@@ -231,7 +232,11 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
 
         # self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
         # print(" Action: ", action)
-        self.vel_pub.publish(self.nav_utils.get_velocity_message_discrete(action))
+        if self.fake_controller == True:
+            print("Angle: ", self.robot_rel_orientation)
+            self.vel_pub.publish(self.nav_utils.controller(goal_info=self.goal_info))
+        else:
+            self.vel_pub.publish(self.nav_utils.get_velocity_message_discrete(action))
         rospy.sleep(rospy.Duration(0, self.skip_time))
 
 
