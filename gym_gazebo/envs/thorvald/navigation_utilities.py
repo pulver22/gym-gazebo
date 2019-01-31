@@ -56,6 +56,21 @@ class NavigationUtilities():
         action_msg.angular.z = action[1]
         return action_msg
 
+    def get_velocity_message_discrete(self, action):
+        """
+        Helper function.
+        Wraps an action vector into a Twist message.
+        """
+        # Set up a Twist message to publish.
+        action_msg = Twist()
+        if action == 0:
+            action_msg.linear.x = 0.2
+        elif action == 1:
+            action_msg.angular.z = -0.2
+        elif action == 2:
+            action_msg.angular.z = 0.2
+        return action_msg
+
     def calculate_collision_from_lidar(self,data):
         """
         Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance

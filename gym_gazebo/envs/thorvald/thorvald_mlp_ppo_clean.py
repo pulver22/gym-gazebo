@@ -32,7 +32,6 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
 
     def __init__(self):
         # Launch the simulation with the given launchfile name
-        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
         self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
         # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
         self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
@@ -48,6 +47,34 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
+        ##########################
+        ##      PARAMETERS      ##
+        ##########################
+        self.max_episode_steps = 200  # limit the max episode step
+        self.reward_range = (-1000.0, 200)
+        self.penalization = - 200
+        self.positive_reward = 200
+        self.acceptance_distance = 1.0
+        self.proximity_distance = 1.5
+        self.min_x = -4.0
+        self.max_x = 4.0
+        self.min_y = - 4.0
+        self.max_y = 4.0
+        self.offset = 3.0
+        self.max_distance = 15.0
+        self.skip_time = 500000000  # expressed in nseconds
+        self.model_name = 'thorvald_ii'
+        self.reference_frame = 'world'
+        self.use_cosine_sine = True
+        self.fake_images = True
+        self.collision_detection = False
+        self.synch_mode = True
+        self.reset_position = True
+        # Launch the simulation with the given launchfile name
+        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
+                                      "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
+        ##########################
+
         self._observation_msg = None
         self._lidar_msg = None
         self._last_obs_header = None
@@ -55,77 +82,61 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.obs = None
         self.reward = 0
         self.done = False
-        self.max_episode_steps = 200  # limit the max episode step
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
-        self.reset_position = True
-        self.use_cosine_sine = True
+
 
         # Action space
-        self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
-        self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
-        self.action_space = spaces.Box(low=self.velocity_low,
-                                       high=self.velocity_high,
-                                       dtype=np.float32)
-
-        # Camera setting
-        self.img_rows = 84
-        self.img_cols = 84
-        self.img_channels = 1
+        # self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
+        # self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
+        # self.action_space = spaces.Box(low=self.velocity_low,
+        #                                high=self.velocity_high,
+        #                                dtype=np.float32)
+        self.action_space = spaces.Discrete(3)  # 0:forward, 1:rotate_left, 2:rotate_right
 
         # Lidar setting
         self.min_range = 0.5
 
         # Observation space
-        self.observation_high = np.array([10.0, 180.0], dtype=np.float32)
-        self.observation_low = np.array([0.0, 0.0], dtype=np.float32)
-        # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
-        self.goal_info = np.zeros(shape=(2))  # Arrays need to have same dimesion in order to be concatened
-        self.observation_space = spaces.Box(low=self.observation_low,
-                                            high=self.observation_high,
-                                            dtype=np.float16)  # With goal info
+        # self.observation_high = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+        # self.observation_low = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        self.goal_info = np.zeros(shape=(2))  # Arrays need to have same dimension in order to be concatenated
+        if self.use_cosine_sine == True:
+            self.goal_info = np.zeros(shape=(3))  # Arrays need to have same dimension in order to be concatenated
+        # TODO: check that this Box space is correct and really required
+        self.observation_space = spaces.Box(low=0.0,
+                                            high=1.0,
+                                            shape=np.shape(self.goal_info),
+                                            dtype=np.float32)  # With goal info
 
 
         # Environment hyperparameters
         self.initial_pose = None
-        self.min_x = - 4.0
-        self.max_x = 4.0
-        self.min_y = - 4.0
-        self.max_y = 4.0
-        self.offset = 3.0
         self.target_position = [None, None]
-        self.model_name = 'thorvald_ii'
-        self.reference_frame = 'world'
-        self.last_clock_msg = None
-        self.last_step_ts = None
-        self.skip_time = 500000000  # expressed in nseconds
-        self.synch_mode = True
-
-
-
-        self.reward_range = (-1000.0, 1000)
-        self.penalization = - 200
-        self.positive_reward = 800
-        self.acceptance_distance = 1.0
-        self.proximity_distance = 0.5
         self.distance = None
         self.robot_abs_pose = None
         self.robot_rel_orientation = None
         self.robot_target_abs_angle = None
         self.euler_bearing = None
+        self.last_collision = None
+        self.pose_acceptable = False
 
-        self.nav_utils = NavigationUtilities(min_x=self.min_x, max_x=self.max_x, min_y=self.min_y, max_y=self.max_y,
-                                        reference_frame=self.reference_frame, model_name=self.model_name,
-                                        distance=self.distance, acceptance_distance=self.acceptance_distance,
-                                        offset=self.offset, positive_reward=self.positive_reward)
-
+        self.last_clock_msg = None
+        self.last_step_ts = None
         self.time_start = 0.0
         self.time_stop = 0.0
         self.rospy_time_start = 0.0
         self.rospy_time_stop = 0.0
 
-        self.r = rospy.Rate(30)
+        self.r = rospy.Rate(20)
 
         self._seed()
+
+        self.nav_utils = NavigationUtilities(min_x=self.min_x, max_x=self.max_x, min_y=self.min_y, max_y=self.max_y,
+                                        reference_frame=self.reference_frame, model_name=self.model_name,
+                                        acceptance_distance=self.acceptance_distance, proximity_distance=self.proximity_distance,
+                                        offset=self.offset, positive_reward=self.positive_reward)
+
+
 
     def clock_callback(self, message):
         """
@@ -145,7 +156,7 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
             self._last_obs_header = message.header.seq
             self._observation_msg = message
         else:
-            ROS_ERROR("Not receiving images")
+            rospy.logerr("Not receiving images")
 
     def lidar_callback(self, message):
         """
@@ -155,7 +166,7 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
             self._last_lidar_header = message.header.seq
             self._lidar_msg =  np.array(message.ranges)
         else:
-            ROS_ERROR("Not receiving lidar readings")
+            rospy.logerr("Not receiving lidar readings")
 
 
     def take_observation(self):
@@ -218,7 +229,9 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
                 print("/gazebo/unpause_physics service call failed")
 
 
-        self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
+        # self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
+        # print(" Action: ", action)
+        self.vel_pub.publish(self.nav_utils.get_velocity_message_discrete(action))
         rospy.sleep(rospy.Duration(0, self.skip_time))
 
 
@@ -295,7 +308,7 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         if self.reset_position is True:
             # rospy.wait_for_service('/gazebo/reset_simulation')
             rospy.wait_for_service('/gazebo/set_model_state')
-            self.initial_pose = self.nav_utils.getRandomPosition()
+            self.initial_pose = self.nav_utils.getRandomRobotPosition()
             #print("New initial position: ", new_initial_pose)
             try:
                 self.set_position_proxy(self.initial_pose)
@@ -307,7 +320,7 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         # Reset the target position and calculate distance robot-target
         self.target_position = self.nav_utils.getRandomTargetPosition(self.initial_pose)
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
-        self.distance = self.nav_utils.getGoalDistance()
+        self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
         self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
 
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)

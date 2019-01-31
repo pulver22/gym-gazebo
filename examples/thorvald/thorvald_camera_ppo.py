@@ -32,8 +32,8 @@ from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, Fee
 
 
 
-# env = gym.make('GazeboThorvaldMlpEnv-v0')  # Only nav_info
-env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
+env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
+# env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
 
 ###########################
 #         LOGGER          #
@@ -60,14 +60,14 @@ env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
 ###########################
 
 seed = 0
-directory="/home/pulver/Desktop/ppo_thorvald/clean/"
+directory="/home/pulver/Desktop/ppo_thorvald/mlp_small_reward/test_arch/"
 # directory="/home/pulver/Desktop/ppo_thorvald/test_angle/"
 # directory = "/home/pulver/Desktop/ppo_thorvald/test_collision"
 #env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
 # model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
 # model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
-model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=1000,  tensorboard_log=directory)
-# model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
+# model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=1000,  tensorboard_log=directory)
+model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
 
 
 ###########################

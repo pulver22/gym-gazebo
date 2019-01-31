@@ -71,6 +71,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.fake_images = True
         self.collision_detection = False
         self.synch_mode = True
+        self.reset_position = True
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
                                       "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
@@ -84,7 +85,6 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.reward = 0
         self.done = False
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
-        self.reset_position = True
 
         # Action space
         self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
@@ -159,7 +159,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             self._last_obs_header = message.header.seq
             self._observation_msg = message
         else:
-            ROS_ERROR("Not receiving images")
+            rospy.logerr("Not receiving images")
 
     def lidar_callback(self, message):
         """
@@ -169,7 +169,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             self._last_lidar_header = message.header.seq
             self._lidar_msg =  np.array(message.ranges)
         else:
-            ROS_ERROR("Not receiving lidar readings")
+            rospy.logerr("Not receiving lidar readings")
 
     def contact_callback(self, message):
         """
