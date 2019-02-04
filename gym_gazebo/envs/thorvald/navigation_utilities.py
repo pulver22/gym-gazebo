@@ -45,7 +45,7 @@ class NavigationUtilities():
 
         return random_pose
 
-    def get_velocity_message(self, action):
+    def getVelocityMessage(self, action):
         """
         Helper function.
         Wraps an action vector into a Twist message.
@@ -56,7 +56,7 @@ class NavigationUtilities():
         action_msg.angular.z = action[1]
         return action_msg
 
-    def get_velocity_message_discrete(self, action):
+    def getVelocityMessageDiscrete(self, action):
         """
         Helper function.
         Wraps an action vector into a Twist message.
@@ -71,7 +71,7 @@ class NavigationUtilities():
             action_msg.angular.z = 0.2
         return action_msg
 
-    def calculate_collision_from_lidar(self,data):
+    def calculateCollisionLidar(self,data):
         """
         Read the Lidar data and return done = True with a penalization is an obstacle is perceived within the safety distance
         :param data:
@@ -174,27 +174,24 @@ class NavigationUtilities():
         # cos_B = delta_x / (math.sqrt(math.pow(delta_x, 2) + math.pow(delta_y, 2)))
         # sin_B = delta_y / (math.sqrt(math.pow(delta_x, 2) + math.pow(delta_y, 2)))
         robot_target_abs_angle = math.atan2(delta_y, delta_x)
-        # print("Delta_x: ", str(delta_x), " delta_y: ", str(delta_y))
-        # print("[1]", str(self.robot_target_abs_angle))
         if delta_y <= 0:
             robot_target_abs_angle = robot_target_abs_angle + 2 * math.pi
-        # print("[2]", str(self.robot_target_abs_angle))
-        return robot_target_abs_angle * 180 / math.pi
-        # print("[3]", str(self.robot_target_abs_angle))
+        # return robot_target_abs_angle * 180 / math.pi  # degrees
+        return robot_target_abs_angle  # radiants
+
 
     def getRobotRelOrientation(self, robot_target_abs_angle, robot_abs_bearing):
         """
         Get the relative angle between the robot orientation and the vector connecting the robot to its target
+
+        # NOTE: this method works with angles in degrees
         :return:
         """
         sign = -1
+        alpha = np.degrees(robot_abs_bearing)
+        beta = np.degrees(robot_target_abs_angle)
+        robot_rel_orientation = abs(beta - alpha)
 
-        robot_rel_orientation = abs(robot_target_abs_angle - (robot_abs_bearing * 180 / 3.14))
-        # if self.robot_target_abs_angle >= 180:
-        # Make the If statement more readable
-
-        alpha = robot_abs_bearing * 180 / 3.14
-        beta = robot_target_abs_angle
         print("-----")
         print("Beta: ", str(beta))
         print("Alpha: ", str(alpha))
@@ -225,6 +222,19 @@ class NavigationUtilities():
         #     self.robot_rel_orientation = abs(180 - self.robot_rel_orientation)
 
         # print("Robot relative orientation: ", str(self.robot_rel_orientation))
+
+    def getRobotRelOrientationAtan2(self, robot_target_abs_angle, robot_abs_bearing):
+        """
+        Calculate the interior angle between the robot and the target
+        :param robot_target_ans_angle:
+        :param robot_abs_bearing:
+        :return:
+        """
+        v_target = [math.cos(robot_target_abs_angle), math.sin(robot_target_abs_angle)]
+        v_robot = [math.cos(robot_abs_bearing), math.sin(robot_abs_bearing)]
+        angle = np.math.pi - np.math.atan2(np.linalg.det([v_target, v_robot]), np.dot(v_target, v_robot))
+        print("Angle: ", np.degrees(angle))
+        return angle
 
     def normalise(self, value, min, max):
         """
@@ -283,3 +293,4 @@ class NavigationUtilities():
             action_str = "Right"
         print("[C] Action: ", action_str)
         return action
+

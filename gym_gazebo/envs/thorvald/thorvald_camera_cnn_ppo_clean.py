@@ -280,13 +280,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             self.reward = self.penalization
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.robot_target_abs_angle = self.nav_utils.getRobotTargetAbsAngle(self.robot_abs_pose, self.target_position)
-        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle,
-                                                                           self.euler_bearing[1])
+        # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
+        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
+                                                                                self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
         self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation)
             # Normalise the sine and cosine
             self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
@@ -386,12 +387,13 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.robot_target_abs_angle = self.nav_utils.getRobotTargetAbsAngle(self.robot_abs_pose, self.target_position)
-        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle,
-                                                                           self.euler_bearing[1])
+        # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
+        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
+                                                                                self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation)
             # Normalise the sine and cosine
             self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)

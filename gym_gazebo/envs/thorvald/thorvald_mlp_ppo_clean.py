@@ -66,11 +66,11 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
         self.use_cosine_sine = True
-        self.fake_images = True
         self.collision_detection = False
         self.synch_mode = True
         self.reset_position = True
-        self.fake_controller = True
+        self.fake_controller = False
+        self.use_discrete_action = False
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
                                       "//home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
@@ -87,12 +87,14 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
 
 
         # Action space
-        # self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
-        # self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
-        # self.action_space = spaces.Box(low=self.velocity_low,
-        #                                high=self.velocity_high,
-        #                                dtype=np.float32)
-        self.action_space = spaces.Discrete(3)  # 0:forward, 1:rotate_left, 2:rotate_right
+        if self.use_discrete_action == True:
+            self.action_space = spaces.Discrete(3)  # 0:forward, 1:rotate_left, 2:rotate_right
+        else:
+            self.velocity_low = np.array([0.0, -0.2], dtype=np.float32)
+            self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
+            self.action_space = spaces.Box(low=self.velocity_low,
+                                           high=self.velocity_high,
+                                           dtype=np.float32)
 
         # Lidar setting
         self.min_range = 0.5
@@ -230,13 +232,16 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
                 print("/gazebo/unpause_physics service call failed")
 
 
-        # self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
+
         # print(" Action: ", action)
         if self.fake_controller == True:
-            print("Angle: ", self.robot_rel_orientation)
+            # print("Angle: ", self.robot_rel_orientation)
             self.vel_pub.publish(self.nav_utils.controller(goal_info=self.goal_info))
         else:
-            self.vel_pub.publish(self.nav_utils.get_velocity_message_discrete(action))
+            if self.use_discrete_action == True:
+                self.vel_pub.publish(self.nav_utils.getVelocityMessageDiscrete(action))
+            else:
+                self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
         rospy.sleep(rospy.Duration(0, self.skip_time))
 
 
@@ -260,11 +265,13 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.robot_target_abs_angle = self.nav_utils.getRobotTargetAbsAngle(self.robot_abs_pose, self.target_position)
-        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1])
+        # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
+        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
+                                                                           self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation)
             # Normalise the sine and cosine
             self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
@@ -331,11 +338,13 @@ class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
         self.robot_target_abs_angle = self.nav_utils.getRobotTargetAbsAngle(self.robot_abs_pose, self.target_position)
-        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1])
+        # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
+        self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
+                                                                                self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation * 3.14 / 180.0)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation * 3.14 / 180.0)
+            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2] = math.sin(self.robot_rel_orientation)
             # Normalise the sine and cosine
             self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
