@@ -6,6 +6,7 @@ https://github.com/vmayoral/basic_reinforcement_learning
 https://gist.github.com/wingedsheep/4199594b02138dd427c22a540d6d6b8d
 '''
 import gym
+import numpy as np
 import gym_gazebo
 import time
 from distutils.dir_util import copy_tree
@@ -20,7 +21,8 @@ import json
 
 from stable_baselines import logger
 from stable_baselines.common import set_global_seeds, tf_util as U
-from stable_baselines import PPO1
+from stable_baselines import PPO1, PPO2
+from stable_baselines.common.vec_env import DummyVecEnv
 from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, FeedForwardPolicy, NavigationMlpPolicy
 
 
@@ -32,8 +34,26 @@ from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, Fee
 
 
 
-env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
-# env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
+
+
+###########################
+#         MODEL           #
+###########################
+
+env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
+env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
+# env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
+print("----  Environment action limits: ", env.action_space.low,", ",  env.action_space.high)
+seed = 0
+directory="/home/pulver/Desktop/ppo_thorvald/no_cos_norm/NAVCNN/"
+# directory="/home/pulver/Desktop/test_clock/"
+ckp_path = directory + "no_cos_norm_relu"
+num_timesteps = 300000
+test_episodes = 10
+model = PPO2(NavigationCnnPolicy, env=env, verbose=1, tensorboard_log=directory, max_grad_norm=0.5)
+# model = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
+# model = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
+test = False
 
 ###########################
 #         LOGGER          #
@@ -55,35 +75,36 @@ env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
 # env = bench.Monitor(env, logger.get_dir())
 
 
-###########################
-#         MODEL           #
-###########################
-
-seed = 0
-directory="/home/pulver/Desktop/ppo_thorvald/mlp_small_reward/test_arch/"
-# directory="/home/pulver/Desktop/ppo_thorvald/test_angle/"
-# directory = "/home/pulver/Desktop/ppo_thorvald/test_collision"
-#env = DummyVecEnv([lambda: env])  # The algorithms require a vectorized environment to run
-# model_1 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=999,  tensorboard_log="/home/pulver/Desktop/ppo_thorvald/")
-# model_2 = PPO1(CnnPolicy, env, verbose=1, timesteps_per_actorbatch=500,  tensorboard_log=directory)
-# model_2 = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=1000,  tensorboard_log=directory)
-model_2 = PPO1(NavigationMlpPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
-
 
 ###########################
 #         TRAIN           #
 ###########################
-
-timer_start = time.time()
-#model_1.learn(total_timesteps=3e5, tb_log_name="999")
-model_2.learn(total_timesteps=5e5)
-model_2.save(save_path=directory + "test_ppo")
-del model_2
-print("Saving")
-ckp_path = directory + "test_ppo.pkl"
-model_2 = PPO1.load(ckp_path, env, tensorboard_log=directory)
-print("Loading")
-model_2.learn(total_timesteps=5e5)
-model_2.save(save_path=directory + "test_ppo_2")
-timer_stop = time.time()
-print("Time simulation: " + str(timer_stop - timer_start) + " seconds")
+if test == False:
+    timer_start = time.time()
+    #model_1.learn(total_timesteps=3e5, tb_log_name="999")
+    model.learn(total_timesteps=num_timesteps)
+    model.save(save_path=ckp_path)
+    print("Saving")
+    # del model
+    # model = PPO1.load(ckp_path + ".pkl", env, tensorboard_log=directory)
+    # print("Loading")
+    # model.learn(total_timesteps=num_timesteps)
+    # model.save(save_path=ckp_path + "2")
+    timer_stop = time.time()
+    print("Time simulation: " + str(timer_stop - timer_start) + " seconds")
+else:
+###########################
+#         TEST           #
+###########################
+    # Load the trained agent
+    model = PPO1.load(ckp_path + ".pkl", env, tensorboard_log=directory)
+    # Enjoy trained agent
+    obs = env.reset()
+    for episodes in range(test_episodes):
+        env.reset()
+        for i in range(200):
+            action, _states = model.predict(obs)
+            obs, rewards, dones, info = env.step(action)
+            if rewards > 0:
+                break
+            #env.render()  # Not required when using Gazebo

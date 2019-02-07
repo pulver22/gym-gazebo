@@ -149,7 +149,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             self._last_obs_header = message.header.seq
             self._observation_msg = message
         else:
-            ROS_ERROR("Not receiving images")
+            rospy.logerr("Not receiving images")
 
     def lidar_callback(self, message):
         """
@@ -159,7 +159,7 @@ class GazeboThorvaldCameraCnnPPOEnv(gazebo_env.GazeboEnv):
             self._last_lidar_header = message.header.seq
             self._lidar_msg =  np.array(message.ranges)
         else:
-            ROS_ERROR("Not receiving lidar readings")
+            rospy.logerr("Not receiving lidar readings")
 
     def contact_callback(self, message):
         """

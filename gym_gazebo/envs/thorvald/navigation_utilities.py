@@ -192,9 +192,9 @@ class NavigationUtilities():
         beta = np.degrees(robot_target_abs_angle)
         robot_rel_orientation = abs(beta - alpha)
 
-        print("-----")
-        print("Beta: ", str(beta))
-        print("Alpha: ", str(alpha))
+        # print("-----")
+        # print("Beta: ", str(beta))
+        # print("Alpha: ", str(alpha))
         # If the following condition applies, apply a positive sign to the angle in order to distinguish rotation clockwise(-) from anticlockwise (+)
 
         # if (0.0 <= beta <= 90.0) and (beta <= alpha <= (180.0 + beta)) :
@@ -215,7 +215,7 @@ class NavigationUtilities():
                 ((180.0 <= beta <= 270.0) and (beta <= alpha <= 360.0) or (0.0 <= alpha <= (beta - 180.0))) or \
                 ((270.0 <= beta <= 360.0) and (-(360.0 - beta) <= alpha <= abs(180.0 - (360.0 - beta)))):
             sign = 1
-            rospy.logerr("Signed changed!")
+            # rospy.logerr("Signed changed!")
         # print("No sign changed")
         return sign * abs(180 - robot_rel_orientation)
         # if self.robot_target_abs_angle >= 180:
@@ -233,7 +233,6 @@ class NavigationUtilities():
         v_target = [math.cos(robot_target_abs_angle), math.sin(robot_target_abs_angle)]
         v_robot = [math.cos(robot_abs_bearing), math.sin(robot_abs_bearing)]
         angle = np.math.pi - np.math.atan2(np.linalg.det([v_target, v_robot]), np.dot(v_target, v_robot))
-        print("Angle: ", np.degrees(angle))
         return angle
 
     def normalise(self, value, min, max):

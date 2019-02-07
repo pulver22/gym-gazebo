@@ -39,8 +39,6 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
         self.collision_sub = rospy.Subscriber('/fag', ContactState, self.contact_callback)
-        self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
-        self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         # Gazebo specific services to start/stop its behavior and
@@ -67,8 +65,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.skip_time = 500000000  # expressed in nseconds
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
-        self.use_cosine_sine = False
-        self.fake_images = True
+        self.use_cosine_sine = True
+        self.fake_images = False
         self.collision_detection = False
         self.synch_mode = True
         self.reset_position = True
@@ -221,9 +219,9 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             - dictionary (#TODO clarify)
         """
         self.iterator += 1
-        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
-        # print("[B]ROSPY Time ", rospy.get_time())
+        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
         self.rospy_time_stop = float(rospy.get_rostime().nsecs)
@@ -232,6 +230,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         #########################
         ##       ACTION        ##
         #########################
+        print("[", self.iterator, "]Action: ", action)
+        action = np.clip(action, self.action_space.low,
+                         self.action_space.high)
+        print("     [", self.iterator, "]Action: ", action)
         if self.synch_mode == True:
             # Unpause simulation
             rospy.wait_for_service('/gazebo/unpause_physics')
@@ -241,8 +243,16 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             except (rospy.ServiceException) as e:
                 print("/gazebo/unpause_physics service call failed")
 
-        self.vel_pub.publish(self.nav_utils.get_velocity_message(action))
-        rospy.sleep(rospy.Duration(0, self.skip_time))
+        start = rospy.get_rostime().nsecs
+        # print("Start: ", start)
+        counter_msg = 1
+        while (abs(rospy.get_rostime().nsecs - start) <= self.skip_time ):
+            self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
+            counter_msg += 1
+        print(" Dt: ", abs(rospy.get_rostime().nsecs - start)*1e-9)
+        print(" Counter msg: ", counter_msg)
+        # self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
+        # rospy.sleep(rospy.Duration(0, self.skip_time))
 
         if self.synch_mode == True:
             # Pause simulation
@@ -284,13 +294,15 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
-        self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
+        # print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
+        # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
             self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
             self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
-            self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
-            self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
+            # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            # self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
@@ -346,7 +358,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
 
         msg = None
-        while msg == None:
+        while self.collision_detection == True and msg == None:
             msg = rospy.wait_for_message("/fag", ContactState)
             print("Waiting")
 
@@ -391,12 +403,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
         self.goal_info[1] = self.robot_rel_orientation
+        print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
         if self.use_cosine_sine == True:
             self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
             self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
-            self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
-            self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
+            # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
+            # self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
 
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)

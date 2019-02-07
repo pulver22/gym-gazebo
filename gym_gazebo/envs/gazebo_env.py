@@ -55,11 +55,11 @@ class GazeboEnv(gym.Env):
 
         time.sleep(5)
 
-        if not os.path.exists(contactlaunchfile):
-            raise IOError("File "+fullpath+" does not exist")
-        if collision_detection:
-            self._contactlaunch = subprocess.Popen([sys.executable, os.path.join(ros_path, b"roslaunch"), "-p", self.port, contactlaunchfile])
-            print("ContactMonitor!")
+        # if not os.path.exists(contactlaunchfile):
+        #     raise IOError("File "+fullpath+" does not exist")
+        # if collision_detection == True:
+        #     self._contactlaunch = subprocess.Popen([sys.executable, os.path.join(ros_path, b"roslaunch"), "-p", self.port, contactlaunchfile])
+        #     print("ContactMonitor!")
 
         # Sleep for few seconds in order to setup the clock
         time.sleep(5)
