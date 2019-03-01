@@ -28,7 +28,7 @@ from gym_gazebo.envs.thorvald.navigation_utilities import NavigationUtilities
 
 
 
-class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
+class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
 
     def __init__(self):
 
@@ -65,6 +65,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.skip_time = 500000000  # expressed in nseconds
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
+        self.navigation_multiplyer = 300
         self.use_cosine_sine = True
         self.fake_images = False
         self.collision_detection = False
@@ -219,9 +220,9 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             - dictionary (#TODO clarify)
         """
         self.iterator += 1
-        print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
-        print("[B]ROSPY Time ", rospy.get_time())
+        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
+        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
+        # print("[B]ROSPY Time ", rospy.get_time())
 
         self.time_stop = float(time.time())
         self.rospy_time_stop = float(rospy.get_rostime().nsecs)
@@ -249,8 +250,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         while (abs(rospy.get_rostime().nsecs - start) <= self.skip_time ):
             self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
             counter_msg += 1
-        print(" Dt: ", abs(rospy.get_rostime().nsecs - start)*1e-9)
-        print(" Counter msg: ", counter_msg)
+        # print(" Dt: ", abs(rospy.get_rostime().nsecs - start)*1e-9)
+        # print(" Counter msg: ", counter_msg)
         # self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
         # rospy.sleep(rospy.Duration(0, self.skip_time))
 
@@ -303,7 +304,9 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             # self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
-
+        self.goal_info = self.navigation_multiplyer * self.goal_info
+        print("     [distance, cosine, sine]: ", self.goal_info[0, :, :], self.goal_info[1, :, :],
+              self.goal_info[2, :, :])
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
 
@@ -311,7 +314,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##        REWARD       ##
         #########################
         if self.done == False:
-            self.reward = self.nav_utils.getReward(self.distance)
+            self.reward = self.nav_utils.getReward(self.distance, self.robot_rel_orientation)
             if self.collision_detection == True:
                 self.reward += self.nav_utils.getCollisionPenalty(self.last_collision)
                 # Reset the last collision
@@ -411,7 +414,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
             # self.goal_info[2] = self.nav_utils.normalise(value=self.goal_info[2], min=-1.0, max=1.0)
-
+        self.goal_info = self.navigation_multiplyer * self.goal_info
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
 

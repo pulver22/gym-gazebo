@@ -1,4 +1,5 @@
 from gym_gazebo.envs.thorvald.thorvald_camera_cnn_ppo import GazeboThorvaldCameraCnnPPOEnv
-from gym_gazebo.envs.thorvald.thorvald_camera_cnn_ppo_clean import GazeboThorvaldCameraCnnPPOEnvSlim
+from gym_gazebo.envs.thorvald.thorvald_camera_cnn_ppo_clean_new import GazeboThorvaldCameraCnnPPOEnvSlim
+from gym_gazebo.envs.thorvald.thorvald_camera_cnn_ppo_clean_old import GazeboThorvaldCameraCnnPPOEnvSlimOld
 from gym_gazebo.envs.thorvald.thorvald_mlp_ppo import GazeboThorvaldMlpPPOEnv
 from gym_gazebo.envs.thorvald.thorvald_mlp_ppo_clean import GazeboThorvaldMlpPPOEnvSlim

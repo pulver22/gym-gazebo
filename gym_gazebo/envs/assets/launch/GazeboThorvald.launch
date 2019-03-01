@@ -7,8 +7,7 @@
               <!--<arg name="use_sim_time" value="$(arg use_sim_time)"/>-->
     </include>
 
-    <!--<include file="$(find contact_monitor)/launch/contactMonitor.launch">-->
-    <!--</include>-->
+    <node name="contactMonitor" pkg="contact_monitor" type="contactMonitor" />
 
 
 </launch>
