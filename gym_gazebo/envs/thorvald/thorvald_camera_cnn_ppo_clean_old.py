@@ -33,20 +33,6 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
     def __init__(self):
 
 
-        self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
-        # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
-        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
-        self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
-        self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
-        self.collision_sub = rospy.Subscriber('/fag', ContactState, self.contact_callback)
-        self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
-        self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
-        # Gazebo specific services to start/stop its behavior and
-        # facilitate the overall RL environment
-        self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
-        self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
-        # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
-
         ##########################
         ##      PARAMETERS      ##
         ##########################
@@ -68,7 +54,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
         self.navigation_multiplyer = 300
         self.use_cosine_sine = True
         self.fake_images = False
-        self.collision_detection = False
+        self.collision_detection = True
         self.synch_mode = True
         self.reset_position = True
         # Launch the simulation with the given launchfile name
@@ -99,13 +85,13 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
         self.min_range = 0.5
 
         # Observation space
-        # self.observation_high = 255.0
-        # self.observation_low = 0.0
-        self.observation_high = 1.0  # DEBUG: mockup images
-        self.observation_low = 0.0  # DEBUG: mockup images
+        self.observation_high = 1.0
+        self.observation_low = 0.0
+        # self.observation_high = 1.0  # DEBUG: mockup images
+        # self.observation_low = 0.0  # DEBUG: mockup images
         # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
         self.goal_info = np.zeros(
-            shape=(self.img_rows, 1, 1))  # Arrays need to have same dimesion in order to be concatened
+            shape=(self.img_rows, 1, 1))  # Arrays need to have same dimension in order to be concatenated
         self.observation_space = spaces.Box(low=self.observation_low,
                                             high=self.observation_high,
                                             shape=(self.img_rows, self.img_cols + 1, self.img_channels),
@@ -138,6 +124,20 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
                                              proximity_distance=self.proximity_distance, acceptance_distance=self.acceptance_distance,
                                              offset=self.offset, positive_reward=self.positive_reward)
 
+        self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
+        # self._drl_sub = rospy.Subscriber('/drl/camera', numpy_msg(HeaderString), self.observation_callback)
+        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
+        # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
+        self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
+        self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contact_callback)
+        self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
+        self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+        # Gazebo specific services to start/stop its behavior and
+        # facilitate the overall RL environment
+        self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
+        self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+
+        # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
 
     def clock_callback(self, message):
@@ -204,6 +204,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
         cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols))
         obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
         # print("  --> Observation acquired")
+        # Normalise the observation
+        # print("[Before] ", np.max(obs_message))
+        obs_message = (obs_message - 0.0)/(255.0 - 0.0)
+        # print("[After] ", np.max(obs_message))
         return obs_message
 
     def _seed(self, seed=None):
@@ -220,9 +224,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
             - dictionary (#TODO clarify)
         """
         self.iterator += 1
-        # print("[B]Time difference between step: ", (float(time.time()) - self.time_stop), " sec")
-        # print("[B]ROSPY Time difference between step: ", abs(rospy.get_rostime().nsecs - self.rospy_time_stop)*1e-9, " sec")
-        # print("[B]ROSPY Time ", rospy.get_time())
+
 
         self.time_stop = float(time.time())
         self.rospy_time_stop = float(rospy.get_rostime().nsecs)
@@ -232,9 +234,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
         ##       ACTION        ##
         #########################
         print("[", self.iterator, "]Action: ", action)
-        action = np.clip(action, self.action_space.low,
-                         self.action_space.high)
-        print("     [", self.iterator, "]Action: ", action)
+        # action = np.clip(action, self.action_space.low, self.action_space.high)
+        # print("     [", self.iterator, "]Action: ", action)
         if self.synch_mode == True:
             # Unpause simulation
             rospy.wait_for_service('/gazebo/unpause_physics')
@@ -244,16 +245,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
             except (rospy.ServiceException) as e:
                 print("/gazebo/unpause_physics service call failed")
 
-        start = rospy.get_rostime().nsecs
-        # print("Start: ", start)
-        counter_msg = 1
-        while (abs(rospy.get_rostime().nsecs - start) <= self.skip_time ):
-            self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
-            counter_msg += 1
-        # print(" Dt: ", abs(rospy.get_rostime().nsecs - start)*1e-9)
-        # print(" Counter msg: ", counter_msg)
-        # self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
-        # rospy.sleep(rospy.Duration(0, self.skip_time))
+        # start = rospy.get_rostime()
+        self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
+        rospy.sleep(rospy.Duration(0, self.skip_time))
+        # stop = rospy.get_rostime()
+        # print("SRostime: ", abs(stop.secs - start.secs))
+        # print("NRostime: ", abs(stop.nsecs - start.nsecs))
 
         if self.synch_mode == True:
             # Pause simulation
@@ -267,6 +264,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
         #########################
         ##         STATE       ##
         #########################
+        print("     -> Acquiring Obs...")
         self.ob = None
         while (self.ob is None):
             try:
@@ -276,6 +274,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
                     self.ob = self.take_observation()
             except:
                 rospy.logerr("Problems acquiring the observation")
+        print("     -> Obs Acquired! Calculating NavInfo...")
 
         # Calculate actual distance from robot
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
@@ -309,6 +308,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
               self.goal_info[2, :, :])
         # Append the goal information (distance and bearing) to the observation space
         self.ob = np.append(self.ob, self.goal_info, axis=1)
+        print("     -> NavInfo Acquired!")
 
         #########################
         ##        REWARD       ##
@@ -362,7 +362,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlimOld(gazebo_env.GazeboEnv):
 
         msg = None
         while self.collision_detection == True and msg == None:
-            msg = rospy.wait_for_message("/fag", ContactState)
+            msg = rospy.wait_for_message("/collision_data", ContactState)
             print("Waiting")
 
         # Reset robot position

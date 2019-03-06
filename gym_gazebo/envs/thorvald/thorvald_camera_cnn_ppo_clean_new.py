@@ -50,7 +50,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.offset = 3.0
         self.max_distance = 15.0
         self.skip_time = 500000000  # expressed in nseconds
-        self.navigation_multiplyer = 300
+        self.navigation_multiplyer = 100.0
         self.model_name = 'thorvald_ii'
         self.reference_frame = 'world'
         self.use_cosine_sine = True
@@ -72,8 +72,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # Camera setting
         self.img_rows = 84
         self.img_cols = 84
-        self.img_channels = 1
-        self.obs = np.zeros(shape=(84,85,self.img_channels))
+        self.img_channels = 4
+        self.obs = np.zeros(shape=(self.img_rows, self.img_cols + 1, self.img_channels))
         # Goal_info needs to have same dimension  of images in order to be concatenated
         self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
         self.reward = 0
@@ -213,6 +213,11 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
         # obs_message = cv_image.reshape(cv_image.shape[0], cv_image.shape[1])
         # print("  --> Observation acquired")
+        # cv2.imwrite('/home/pulver/Desktop/img.png', obs_message)
+        # print("Original: \n", obs_message)
+        obs_message = (obs_message - 0.0) / (255.0 - 0.0)
+        # cv2.imwrite('/home/pulver/Desktop/img_corrected.png', obs_message)
+        # print("Normalised: \n", obs_message)
         return obs_message
 
     def _seed(self, seed=None):
@@ -314,16 +319,16 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         #       self.goal_info[2, :, :])
         # print("     ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
-        last_ob = np.append(last_ob, self.goal_info, axis=1)
+        # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
         #
-        # if self.img_channels > 1:
-        #     for i in range(self.img_channels -1, 0, -1):
-        #         self.obs[:,:, i] = self.obs[:,:,i-1]
-        #         # self.obs[:,:,3] = self.obs[:,:,2]
-        #         # self.obs[:,:,2] = self.obs[:,:,1]
-        #         # self.obs[:,:,1] = self.obs[:,:,0]
-        # self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
+        if self.img_channels > 1:
+            for i in range(self.img_channels -1, 0, -1):
+                self.obs[:,:, i] = self.obs[:,:,i-1]
+                # self.obs[:,:,3] = self.obs[:,:,2]
+                # self.obs[:,:,2] = self.obs[:,:,1]
+                # self.obs[:,:,1] = self.obs[:,:,0]
+        self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
 
         #########################
         ##        REWARD       ##
@@ -360,8 +365,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # print("[B]Time difference between step: ", (float(self.time_stop - self.time_start)), " sec")
         # print("[B]ROSPY Time difference between step: ", self.rospy_time_stop - self.rospy_time_start, " nsec")
 
-        # return self.obs, self.reward, self.done, {}
-        return last_ob, self.reward, self.done, {}
+        return self.obs, self.reward, self.done, {}
+        # return last_ob, self.reward, self.done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
@@ -446,12 +451,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.goal_info = self.navigation_multiplyer * self.goal_info
         # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
-        last_ob = np.append(last_ob, self.goal_info, axis=1)
+        # last_ob = np.append(last_ob, self.goal_info, axis=1)
         #
-        # self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
-        # if self.img_channels > 1:
-        #     for i in range(1, self.img_channels):
-        #         self.obs[:,:,i] = self.obs[:,:,0]
+        self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
+        if self.img_channels > 1:
+            for i in range(1, self.img_channels):
+                self.obs[:,:,i] = self.obs[:,:,0]
 
         if self.synch_mode == True:
             # Pause the simulation
@@ -473,5 +478,5 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.rospy_time_stop = float(rospy.Time.now().nsecs)
         self.done = False
 
-        # return self.obs
-        return last_ob
+        return self.obs
+        # return last_ob

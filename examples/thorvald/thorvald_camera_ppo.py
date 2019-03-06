@@ -51,16 +51,17 @@ class CustomPolicy(FeedForwardPolicy):
 #         MODEL           #
 ###########################
 
-env = gym.make('GazeboThorvaldCameraEnv-v2')  # Camera + nav_info
+env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
 # env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
 env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
 # env = VecFrameStack(env, 4)  # The algorithm require a vectorized environment to run
 
 print("----  Environment action limits: ", env.action_space.low,", ",  env.action_space.high)
 seed = 0
-# directory="/home/pulver/Desktop/ppo_thorvald/stack/1/no_lateral/"
-directory="/home/pulver/Desktop/test_clock/old/"
-ckp_path = directory + "1images"
+# directory="/home/pulver/Desktop/ppo_thorvald/test_collision"
+directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/"
+# directory="/home/pulver/Desktop/tmp/"
+ckp_path = directory + "4norm"
 
 num_timesteps = 100000
 test_episodes = 10
@@ -90,15 +91,13 @@ test = False
 # logger.configure()
 # env = bench.Monitor(env, logger.get_dir())
 
-
-
 ###########################
 #         TRAIN           #
 ###########################
-if test == False:
+if test is False:
     timer_start = time.time()
     print("Saving file in: ", directory)
-    #model_1.learn(total_timesteps=3e5, tb_log_name="999")
+    # model_1.learn(total_timesteps=3e5, tb_log_name="999")
     model.learn(total_timesteps=num_timesteps)
     model.save(save_path=ckp_path)
     print("Saving")
@@ -126,5 +125,5 @@ else:
             if rewards > 0:
                 success += 1
                 break
-            #env.render()  # Not required when using Gazebo
+            # env.render()  # Not required when using Gazebo
     print("Success rate: ", 100*(success / test_episodes), "%")
