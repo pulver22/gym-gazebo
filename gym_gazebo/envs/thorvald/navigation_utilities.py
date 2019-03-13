@@ -8,12 +8,7 @@ from geometry_msgs.msg import Twist
 
 
 class NavigationUtilities():
-    def __init__(self, min_x, max_x, min_y, max_y, reference_frame, model_name,
-               proximity_distance, acceptance_distance, offset, positive_reward):
-        self.min_x = min_x
-        self.max_y = max_y
-        self.min_y = min_y
-        self.max_x = max_x
+    def __init__(self,  reference_frame, model_name, proximity_distance, acceptance_distance, offset, positive_reward):
         self.reference_frame = reference_frame
         self.model_name = model_name
         self.acceptance_distance = acceptance_distance
@@ -23,11 +18,11 @@ class NavigationUtilities():
 
 
 
-    def getRandomRobotPosition(self):
+    def getRandomPosition(self, reference_frame, model_name, world_size):
         random_pose = ModelState()
 
-        tmp_x = np.random.uniform(low=self.min_x, high=self.max_x)
-        tmp_y = np.random.uniform(low=self.min_y, high=self.max_y)
+        tmp_x = np.random.uniform(low=world_size[0], high=world_size[1])
+        tmp_y = np.random.uniform(low=world_size[2], high=world_size[3])
         random_pose.pose.position.x = tmp_x
         random_pose.pose.position.y = tmp_y
         random_pose.pose.position.z = 0.0
@@ -40,8 +35,29 @@ class NavigationUtilities():
         random_pose.pose.orientation.z = orientation.components[3]
         random_pose.pose.orientation.w = orientation.components[0]
 
-        random_pose.reference_frame = self.reference_frame
-        random_pose.model_name = self.model_name
+        random_pose.reference_frame = reference_frame
+        random_pose.model_name = model_name
+
+        return random_pose
+
+    def getfarAwayPosition(self, reference_frame, model_name):
+        random_pose = ModelState()
+        tmp_x = np.random.uniform(-25.0, -50.0)
+        tmp_y = np.random.uniform(-25.0, -30.0)
+        random_pose.pose.position.x = tmp_x
+        random_pose.pose.position.y = tmp_y
+        random_pose.pose.position.z = 0.0
+        # print("Random position (X,Y)= (" + str(tmp_x) + "," + str(tmp_y)+ ")")
+        yaw = np.random.uniform(low=0, high=360)
+        # quaternion = quaternion_from_euler(roll=0, pitch=0, yaw=yaw)  # NOTE: Py3 does not support tf
+        orientation = quaternion.from_euler_angles(0.0, 0.0, yaw)  # roll, pitch, yaw
+        random_pose.pose.orientation.x = orientation.components[1]
+        random_pose.pose.orientation.y = orientation.components[2]
+        random_pose.pose.orientation.z = orientation.components[3]
+        random_pose.pose.orientation.w = orientation.components[0]
+
+        random_pose.reference_frame = reference_frame
+        random_pose.model_name = model_name
 
         return random_pose
 
@@ -257,22 +273,21 @@ class NavigationUtilities():
         """
         penalty = 0.0
         if last_collision != None:
-            print("     Collision between: %s and %s " %(last_collision.collision1_name, last_collision.collision2_name ))
+            # print("     Collision between: %s and %s " %(last_collision.collision1_name, last_collision.collision2_name ))
             for wrench in last_collision.wrenches:
                 # penalty += min(0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2)), 1)
                 penalty = 0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2))
-            print("         Penalty: ", penalty)
+            # Send a big penalty if the robot is colliding with the orang walls
+            if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
+                penalty = 5.0
+            # print("         Penalty: ", penalty)
         return -penalty
 
-    def checkRobotPose(self, robot_pose):
+    def checkPose(self, robot_pose, objects_msg):
         """
         Check if the robot is within an object
         :return:
         """
-        objects_msg = None
-        while objects_msg == None:
-            objects_msg = rospy.wait_for_message("/gazebo/model_states", ModelStates)
-
 
         for i in range(0, len(objects_msg.name)):
             # print("Checking pose ", (i+1), "of", len(objects_msg.name))
@@ -300,3 +315,4 @@ class NavigationUtilities():
         print("[C] Action: ", action_str)
         return action
 
+    # def randomise_world(selfself, object_list):

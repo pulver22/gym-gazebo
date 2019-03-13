@@ -23,8 +23,8 @@ import json
 from stable_baselines import logger
 from stable_baselines.common import set_global_seeds, tf_util as U
 from stable_baselines import PPO1, PPO2, TRPO
-from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack
-from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, FeedForwardPolicy, NavigationMlpPolicy
+from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack, SubprocVecEnv
+from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, FeedForwardPolicy, NavigationMlpPolicy, NavigationCnnLstmPolicy
 
 from stable_baselines.a2c.utils import conv, linear, conv_to_fc
 # def policy_cnn(name, env):
@@ -54,22 +54,27 @@ class CustomPolicy(FeedForwardPolicy):
 env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
 # env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
 env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
+
+# TODO: LSTM requirement?
+n_cpu = 2
+# env = SubprocVecEnv([lambda: env for i in range(n_cpu)])
 # env = VecFrameStack(env, 4)  # The algorithm require a vectorized environment to run
 
 print("----  Environment action limits: ", env.action_space.low,", ",  env.action_space.high)
 seed = 0
 # directory="/home/pulver/Desktop/ppo_thorvald/test_collision"
-directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/"
-# directory="/home/pulver/Desktop/tmp/"
+# directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/"
+# directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/LSTM/400/"
+directory="/home/pulver/Desktop/tmp/avoidance/1/"
 ckp_path = directory + "4norm"
 
 num_timesteps = 100000
 test_episodes = 10
 # model = TRPO(policy=NavigationCnnPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
 # model = TRPO(policy=NavigationMlpPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
-# model = PPO2(NavigationCnnPolicy, env=env, verbose=1, tensorboard_log=directory, max_grad_norm=0.5)
 # model = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
-model = PPO2(NavigationCnnPolicy, env, verbose=1, n_steps=800,  tensorboard_log=directory, full_tensorboard_log=True)
+model = PPO2(NavigationCnnPolicy, env=env, n_steps=800, verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
+# model = PPO2(NavigationCnnLstmPolicy, env=env, n_steps=20, nminibatches=1,  verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 test = False
 # ckp_path = "/home/pulver/Desktop/ppo_thorvald/no_cos_norm/NAVCNN/300/PPO2_3/no_cos_norm_relu.pkl"
 ###########################
@@ -98,7 +103,7 @@ if test is False:
     timer_start = time.time()
     print("Saving file in: ", directory)
     # model_1.learn(total_timesteps=3e5, tb_log_name="999")
-    model.learn(total_timesteps=num_timesteps)
+    model.learn(total_timesteps=num_timesteps, seed=seed)
     model.save(save_path=ckp_path)
     print("Saving")
     # del model
