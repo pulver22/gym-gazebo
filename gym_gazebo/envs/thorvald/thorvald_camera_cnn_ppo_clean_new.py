@@ -43,9 +43,9 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
         self.proximity_distance = 3.0
-        self.world_xy = [-8.0, 8.0, -8.0, 8.0]
+        self.world_xy = [-6.0, 6.0, -6.0, 6.0]
         # self.world_y = [-6.0, 6.0]
-        self.robot_xy = [-5.0, 5.0, -5.0, 5.0]
+        self.robot_xy = [-6.0, 6.0, -6.0, 6.0]
         # self.robot_y = [-3.0, 3.0]
         self.offset = 3.0
         self.max_distance = 15.0
@@ -58,23 +58,46 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = True #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
+        self.use_depth = True
+        self.use_combined_depth = False
+        self.use_stack_memory = False
         self.episodes_reset = 30
-        # Launch the simulation with the given launchfile name
-        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
-                                      "/home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
-        ##########################
-
-        self._observation_msg = None
-        self._lidar_msg = None
-        self._last_obs_header = None
-        self._last_lidar_header = None
-        # Lidar setting
-        self.min_range = 0.5
         # Camera setting
         self.img_rows = 84
         self.img_cols = 84
         self.img_channels = 1
+        if self.use_combined_depth is True:
+            self.img_channels += 1
         self.obs = np.zeros(shape=(self.img_rows, self.img_cols + 1, self.img_channels))
+        # Launch the simulation with the given launchfile name
+        gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
+                                      "/home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
+
+        print("==== CONFIGURATION ====")
+        print("use_cosine_sine: ", self.use_cosine_sine)
+        print("fake_images: ", self.fake_images)
+        print("collision_detection: ", self.collision_detection)
+        print("sych_mode: ", self.synch_mode)
+        print("reset_position: ", self.reset_position)
+        print("use_depth: ", self.use_depth)
+        print("use_combined_depth: ", self.use_combined_depth)
+        print("use_stack_memory: ", self.use_stack_memory)
+        print("Observation shape: ", np.shape(self.obs))
+        print("=======================")
+
+        assert (self.use_stack_memory is True and self.use_depth is False) or \
+               (self.use_stack_memory is False and self.use_depth is True), "If using a stack of images, depth is not supported yet"
+        ##########################
+
+        self._observation_msg = None
+        self._depth_msg = None
+        self._lidar_msg = None
+        self._last_obs_header = None
+        self._last_depth_header = None
+        self._last_lidar_header = None
+        self._last_contact_header = None
+        # Lidar setting
+        self.min_range = 0.5
         # Goal_info needs to have same dimension  of images in order to be concatenated
         self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
         self.reward = 0
@@ -95,6 +118,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##########################
         ##       OBS SPACE      ##
         ##########################
+        self.bridge = CvBridge()
         self.observation_high = 1.0
         self.observation_low = 0.0
         # self.observation_high = 1.0  # DEBUG: mockup images
@@ -131,11 +155,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##          ROS         ##
         ##########################
         self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
-        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observation_callback)
+        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observationCallback)
+        self.depth_sub = rospy.Subscriber('depth_registered/image_rect', Image, self.depthCallback )  # registered depth
         # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
-        self.clock_sub = rospy.Subscriber('/clock', Clock, self.clock_callback)
+        self.clock_sub = rospy.Subscriber('/clock', Clock, self.clockCallback)
         # self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelState, self.objects_callback)
-        self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contact_callback)
+        self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contactCallback)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
         # Gazebo specific services to start/stop its behavior and facilitate the overall RL environment
@@ -156,7 +181,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
     #     self.objects_list = message.name
 
 
-    def clock_callback(self, message):
+    def clockCallback(self, message):
         """
         Callback method for the subscriber of the clock topic
         :param message:
@@ -166,10 +191,11 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.last_clock_msg = int(message.clock.nsecs)
         # print(self.last_clock_msg)
 
-    def observation_callback(self, message):
+    def observationCallback(self, message):
         """
         Callback method for the subscriber of the camera
         """
+
         # print("Image received")
         if message.header.seq != self._last_obs_header:
             self._last_obs_header = message.header.seq
@@ -177,7 +203,122 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         else:
             rospy.logerr("Not receiving images")
 
-    def lidar_callback(self, message):
+        # # print("Image received")
+        # if message.header.seq != self._last_obs_header:
+        #     self._last_obs_header = message.header.seq
+        #     # self._observation_msg = message
+        #     try:
+        #         cv_image = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
+        #         # Convert the image to grayscale
+        #         cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        #         # Crop the image to be 1080*1080, keeping the same centre of the original one
+        #         cv_image = cv_image[:, 419:1499]
+        #         print("Original shape: ", cv_image.shape)
+        #         # cv2.imwrite('/home/pulver/Desktop/img_original.png', cv_image)
+        #         print("[Ob]Min: {}, max: {}".format(cv_image.min(), cv_image.max()))
+        #         # Normalize the depth image to fall between 0 (black) and 1 (white)
+        #         # http://docs.ros.org/electric/api/rosbag_video/html/bag__to__video_8cpp_source.html lines 95-125
+        #         # cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 1, cv2.NORM_MINMAX)
+        #         # print("[Ob]Min: {}, max: {}".format(cv_image_norm.min(), cv_image_norm.max()))
+        #         # Resize and reshape the image according to the network input size
+        #         cv_image = np.array(cv_image, dtype=np.dtype('f8'))
+        #         cv_image_resized = cv2.resize(cv_image, (self.img_rows, self.img_cols))
+        #         print("New shape: ", cv_image.shape)
+        #         # cv2.imwrite('/home/pulver/Desktop/img_scaled.png', cv_image)
+        #         self.observation = cv_image.reshape(cv_image_resized.shape[0], cv_image_resized.shape[1], 1)
+        #         # obs_message = cv_image.reshape(cv_image.shape[0], cv_image.shape[1])
+        #         # print("  --> Observation acquired")
+        #         # cv2.imwrite('/home/pulver/Desktop/img.png', obs_message)
+        #         # self.observation  = obs_message / 255.0
+        #     except CvBridgeError as e:
+        #         print(e)
+        # else:
+        #     rospy.logerr("Not receiving images")
+
+    def depthCallback(self, message):  # TODO still too noisy!
+        """
+        Callback method for the subscriber of the depth camera
+        """
+        # print("Depth callback!")
+        if message.header.seq != self._last_depth_header:
+            self._last_depth_header = message.header.seq
+            self._depth_msg = message
+            # print(self._depth_msg.header.seq)
+        else:
+            rospy.logerr("Not receiving images")
+
+
+    def takeDepth(self):
+        """
+        Take depth observation from the environment and return itself.
+        """
+        # print("Takedepth!")
+        depth_message = None
+        while depth_message is None:
+            try:
+                depth_message = self._depth_msg
+                # print("depth_message: ", depth_message)
+            except:  # CvBridgeError as ex:
+                rospy.logerr("ERROR!!")  # , ex)
+        # print("Message acquired")
+        # The depth image is a single-channel float32 image
+        # the values is the distance in mm in z axis
+        print("[DEP]Type: ", type(depth_message))
+        cv_image = self.bridge.imgmsg_to_cv2(depth_message)#, desired_encoding="32FC1")
+        print("[DEP]Type: ", type(depth_message))
+        # print("1")
+        # Crop the image to be 1080*1080, keeping the same centre of the original one
+        cv_image = cv_image[:, 419:1499]
+        # print("2")
+        # Convert the depth image to a Numpy array since most cv2 functions
+        # require Numpy arrays.
+        cv_image_array = np.array(cv_image, dtype=np.dtype('f8'))
+        print("[DEP]Type: ", type(cv_image_array))
+        # print("3")
+        # Normalize the depth image to fall between 0 (black) and 1 (white)
+        # http://docs.ros.org/electric/api/rosbag_video/html/bag__to__video_8cpp_source.html lines 95-125
+        cv_image_norm = cv2.normalize(cv_image_array, cv_image_array, 0, 1, cv2.NORM_MINMAX)
+        # print("4")
+        # Resize to the desired size
+        cv_image_resized = cv2.resize(cv_image, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
+        # print("5")
+        print("Shape: ", np.shape(cv_image_resized))
+        # depth_message =  cv_image.reshape(cv_image_resized.shape[0], cv_image_resized.shape[1], 1)
+        print("NewShape: ", np.shape(cv_image_resized))
+        # print("[DEP]Min={}, Max={}".format(np.min(depth_message), np.max(depth_message)))
+        return depth_message
+
+    def takeObservation(self):
+        """
+        Take observation from the environment and return itself.
+        """
+        obs_message = None
+        # print("Camera Empty: ", obs_message)
+        while obs_message is None:
+            try:
+                obs_message = self._observation_msg
+            except:# CvBridgeError as ex:
+                rospy.logerr ("ERROR!!")#, ex)
+        # Convert from sensor_msgs::Image to cv::Mat
+        print("[OBS]Type: ", type(obs_message))
+        cv_image = self.bridge.imgmsg_to_cv2(obs_message, desired_encoding="bgr8")
+        print("[OBS]Type: ", type(cv_image))
+        # Convert the image to grayscale
+        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        # Crop the image to be 1080*1080, keeping the same centre of the original one
+        cv_image = cv_image[:, 419:1499]
+        # Resize and reshape the image according to the network input size
+        cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
+        print("Shape: ", np.shape(cv_image))
+        obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
+        print("NewShape: ", np.shape(obs_message))
+        # Normalize the pixel between [0, 1]
+        obs_message = obs_message/255.0
+        print("[OBS]Min={}, Max={}".format(np.min(obs_message), np.max(obs_message)))
+        return obs_message
+
+
+    def lidarCallback(self, message):
         """
         Callback method for the subscriber of lidar
         """
@@ -187,46 +328,17 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         else:
             rospy.logerr("Not receiving lidar readings")
 
-    def contact_callback(self, message):
+    def contactCallback(self, message):
         """
         Parse ContactState messages for possible collision (filter those involving the ground)
         :param message:
         :return:
         """
-
         if "ground_plane" in message.collision1_name or "ground_plane" in message.collision2_name:
             pass
         elif "thorvald_ii" in message.collision1_name or "thorvald_ii" in message.collision2_name:
             self.last_collision = message
 
-
-    def take_observation(self):
-        """
-        Take observation from the environment and return itself.
-        """
-        obs_message = None
-        bridge = CvBridge()
-        # print("Camera Empty: ", obs_message)
-        while obs_message is None:
-            try:
-                obs_message = self._observation_msg
-            except:# CvBridgeError as ex:
-                rospy.logerr ("ERROR!!")#, ex)
-        # Convert from sensor_msgs::Image to cv::Mat
-        cv_image = bridge.imgmsg_to_cv2(obs_message, desired_encoding="bgr8")
-        # Convert the image to grayscale
-        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        # Resize and reshape the image according to the network input size
-        cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols))
-        obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
-        # obs_message = cv_image.reshape(cv_image.shape[0], cv_image.shape[1])
-        # print("  --> Observation acquired")
-        # cv2.imwrite('/home/pulver/Desktop/img.png', obs_message)
-        # print("Original: \n", obs_message)
-        obs_message = (obs_message - 0.0) / (255.0 - 0.0)
-        # cv2.imwrite('/home/pulver/Desktop/img_corrected.png', obs_message)
-        # print("Normalised: \n", obs_message)
-        return obs_message
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -285,12 +397,16 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##         STATE       ##
         #########################
         last_ob = None
-        while (last_ob is None):
+        last_depth = None
+        while (last_ob is None and last_depth is None):
             try:
                 if self.fake_images == True:
                     last_ob = np.zeros(shape=(84, 84, 1))  # DEBUG
                 else:
-                    last_ob = self.take_observation()
+                    last_ob = self.takeObservation()
+                    last_depth = self.takeDepth()
+                    # self.takeDepth()
+                    # last_ob = self.observation
                     # print("[Image] min: {}, max: {}".format(np.min(last_ob), np.max(last_ob)))
             except:
                 rospy.logerr("Problems acquiring the observation")
@@ -331,13 +447,24 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
         #
-        if self.img_channels > 1:
+        if self.use_stack_memory is True and self.use_depth is False:
+            # TODO: modify to take care of stack of observation + depth
             for i in range(self.img_channels -1, 0, -1):
                 self.obs[:,:, i] = self.obs[:,:,i-1]
                 # self.obs[:,:,3] = self.obs[:,:,2]
                 # self.obs[:,:,2] = self.obs[:,:,1]
                 # self.obs[:,:,1] = self.obs[:,:,0]
-        self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
+        else:
+            raise Exception('Stack memory is not compatible with depth (yet)')
+
+        # If you want to use only depth image
+        if self.use_depth is True and self.use_combined_depth is False:
+            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
+        else:
+            self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
+
+        if self.use_combined_depth is True:
+            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
 
         #########################
         ##        REWARD       ##
@@ -396,11 +523,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             except (rospy.ServiceException) as e:
                 print("/gazebo/unpause_physics service call failed")
 
-
-        msg = None
-        while self.collision_detection == True and msg == None:
-            # print("Waiting")
-            msg = rospy.wait_for_message("/collision_data", ContactState)
+        # TODO: wait_for_message dies after a while. The check should be implemented using normal subscribers
+        # while self.collision_detection == True and msg == None:
+        #     # print("Waiting")
+        #     msg = rospy.wait_for_message("/collision_data", ContactState)
 
         if self.reset_position is True:
             rospy.wait_for_service('/gazebo/set_model_state')
@@ -475,14 +601,24 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         # Take an observation
         last_ob = None
+        last_depth = None
         while (last_ob is None):
             try:
                 if self.fake_images == True:
                     last_ob = np.zeros(shape=(84, 84, 1))  # DEBUG
                 else:
-                    last_ob = self.take_observation()
+                    last_ob = self.takeObservation()
             except:
                 rospy.logerr("Problems acquiring the observation")
+
+        while (last_depth is None):
+            try:
+                last_depth = self.takeDepth()
+            except:
+                rospy.logerr("Problems acquiring the observation")
+        last_depth = np.reshape(last_depth, (self.img_rows, self.img_cols, 1))
+        print("OBS: min={}, max={}".format(np.min(last_ob), np.max(last_ob)))
+        print("DEP: min={}, max={}".format(np.min(last_depth), np.max(last_depth)))
 
 
         # print("Observation acquired!")
@@ -513,11 +649,23 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
-        #
-        self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
-        if self.img_channels > 1:
+
+
+        # If you want to use only depth image
+        if self.use_depth is True and self.use_combined_depth is False:
+            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
+        else:
+            self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84, 85))
+
+        # TODO: modify to take care of stack of observation + depth
+        if self.use_stack_memory is True and self.use_depth is False:
             for i in range(1, self.img_channels):
                 self.obs[:,:,i] = self.obs[:,:,0]
+        else:
+            raise Exception('Stack memory is not compatible with depth (yet')
+
+        if self.use_combined_depth is True:
+            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
 
         if self.synch_mode == True:
             # Pause the simulation

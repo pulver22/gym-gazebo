@@ -65,10 +65,11 @@ seed = 0
 # directory="/home/pulver/Desktop/ppo_thorvald/test_collision"
 # directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/"
 # directory="/home/pulver/Desktop/test_clock/old/4/1/pre-normalised/multiplyer/LSTM/400/"
-directory="/home/pulver/Desktop/tmp/avoidance/1/"
+directory="/home/pulver/Desktop/tmp/avoidance/1/depth"
+# directory="/home/pulver/Desktop/tmp/"
 ckp_path = directory + "4norm"
 
-num_timesteps = 100000
+num_timesteps = 500000
 test_episodes = 10
 # model = TRPO(policy=NavigationCnnPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
 # model = TRPO(policy=NavigationMlpPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
