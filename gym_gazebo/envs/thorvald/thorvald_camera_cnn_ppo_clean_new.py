@@ -16,7 +16,7 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan, Image
 from std_srvs.srv import Empty
 from gazebo_msgs.srv import SetModelState, GetModelState
-from gazebo_msgs.msg import ModelStates, ContactState
+from gazebo_msgs.msg import ModelState, ModelStates, ContactState
 from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats, HeaderString
@@ -167,7 +167,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             self.depth_sub = rospy.Subscriber('/thorvald_ii/kinect2/sd/image_depth_rect', Image, self.depthCallback)
         # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clockCallback)
-        # self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelState, self.objects_callback)
+        self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelStates, self.objects_callback)
         self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contactCallback)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.set_position_proxy = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
@@ -182,11 +182,11 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.r = rospy.Rate(20)
 
 
-    # def objects_callback(self, message):
-    #     """
-    #     Callback for retrieving the list of objects present in the world
-    #     """
-    #     self.objects_list = message.name
+    def objects_callback(self, message):
+        """
+        Callback for retrieving the list of objects present in the world
+        """
+        self.objects_list = message
 
 
     def clockCallback(self, message):
@@ -252,7 +252,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         # Normalize the depth image to fall between 0 (black) and 1 (white)
         cv_image_norm = cv_image_norm / 255.0
-        cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
+        # cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
         # Resize to the desired size
         cv_image = cv2.resize(cv_image_norm, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
         depth_message =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1], 1)
@@ -495,10 +495,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         if self.reset_position is True:
             rospy.wait_for_service('/gazebo/set_model_state')
-            # print("Waiting for object list")
             self.objects_list = None
             while self.objects_list == None:
-                self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                #  Wait the callback updates the object list
+                # print("Waiting for object list")
+                # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                pass
 
             # Once in a while, reset objects position
             # TODO: regenerate the world if the robot cannot find a new position for X times
@@ -525,7 +527,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                         # print("Waiting for object list")
                         self.objects_list = None
                         while self.objects_list == None:
-                            self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                            #  Wait the callback updates the object list
+                            # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                            # print("Waiting for object list")
+                            pass
                         self.pose_acceptable = False
                         if self.objects_list.name[i] != self.model_name:
                             while self.pose_acceptable == False:
@@ -547,7 +552,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             self.pose_acceptable = False
             self.objects_list = None
             while self.objects_list == None:
-                self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                #  Wait the callback updates the object list
+                # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                # print("Waiting for object list")
+                pass
 
             while self.pose_acceptable == False:
                 # print("Selecting random pose")
