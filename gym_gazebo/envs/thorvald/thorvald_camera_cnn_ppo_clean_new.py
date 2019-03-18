@@ -276,7 +276,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # Crop the image to be 1080*1080, keeping the same centre of the original one
         cv_image = cv_image[:, 419:1499]
         # Normalize the depth image to fall between 0 (black) and 1 (white)
-        cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 1, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        cv_image_norm = cv_image / 255.0
+        # cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         # Resize and reshape the image according to the network input size
         cv_image = cv2.resize(cv_image_norm, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
         obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
