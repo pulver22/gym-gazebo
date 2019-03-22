@@ -15,7 +15,7 @@ from gym_gazebo.envs import gazebo_env
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan, Image
 from std_srvs.srv import Empty
-from gazebo_msgs.srv import SetModelState, GetModelState
+from gazebo_msgs.srv import SetModelState, GetModelState, SpawnModel
 from gazebo_msgs.msg import ModelState, ModelStates, ContactState
 from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
@@ -42,7 +42,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.positive_reward = 200
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
-        self.proximity_distance = 3.0
+        self.proximity_distance = 2.0
         self.world_xy = [-3.0, 3.0, -3.0, 3.0]
         # self.world_y = [-6.0, 6.0]
         self.robot_xy = [-4.0, 4.0, -4.0, 4.0]
@@ -56,13 +56,16 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.use_cosine_sine = True
         self.fake_images = False
         self.collision_detection = True
-        self.synch_mode = True #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
+        self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
         self.use_depth = False
         self.registered = False
         self.use_combined_depth = False
         self.use_stack_memory = False
+        self.use_curriculum = False
+        self.curriculum_episode = 350
         self.episodes_reset = 15
+        self.counter_barrier = 2
         # Camera setting
         self.img_rows = 84
         self.img_cols = 84
@@ -84,6 +87,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         print("use_combined_depth: ", self.use_combined_depth)
         print("use_stack_memory: ", self.use_stack_memory)
         print("Observation shape: ", np.shape(self.obs))
+        print("use_curriculum: ", self.use_curriculum)
         print("=======================")
 
 
@@ -174,12 +178,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # Gazebo specific services to start/stop its behavior and facilitate the overall RL environment
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+        self.spawn_model_proxy = rospy.ServiceProxy("gazebo/spawn_sdf_model", SpawnModel)
         # self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
         self.time_start = 0.0
         self.time_stop = 0.0
         self.rospy_time_start = 0.0
         self.rospy_time_stop = 0.0
         self.r = rospy.Rate(20)
+        self.resp = None
 
 
     def objects_callback(self, message):
@@ -336,7 +342,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # print("Before unpausing")
         if self.synch_mode == True:
             # Unpause simulation
-            rospy.wait_for_service('/gazebo/unpause_physics')
+            self.resp = rospy.wait_for_service('/gazebo/unpause_physics')
             try:
                 self.unpause()
                 # print("UnPausing")
@@ -352,7 +358,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         if self.synch_mode == True:
             # Pause simulation
-            rospy.wait_for_service('/gazebo/pause_physics')
+            self.resp = rospy.wait_for_service('/gazebo/pause_physics')
             try:
                 self.pause()
                 # print("Pausing")
@@ -481,7 +487,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         if self.synch_mode == True:
             # Unpause simulation
-            rospy.wait_for_service('/gazebo/unpause_physics')
+            self.resp = rospy.wait_for_service('/gazebo/unpause_physics')
             try:
                 self.unpause()
                 # print("UnPausing")
@@ -493,56 +499,85 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         #     # print("Waiting")
         #     msg = rospy.wait_for_message("/collision_data", ContactState)
 
+        # If using curriculum learning, add a new object once in a while
+        if self.use_curriculum is True:
+            if self.episodes_counter % self.curriculum_episode == 0:
+                #self.resp = rospy.wait_for_service("gazebo/spawn_sdf_model")
+                try:
+                    item_name = "drc_practice_orange_jersey_barrier{}".format(self.counter_barrier)
+                    item_xml =  "/home/pulver/.gazebo/models/drc_practice_orange_jersey_barrier/model.sdf"
+                    with open(item_xml, "r") as f:
+                        item_xml = f.read()
+                    # NB: nav_utils.getRandomPosition() return a ModelState object, we need only the pose
+                    item_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
+                                                                 model_name=item_name,
+                                                                 world_size=[-25.0, -50.0, -25.0, -30.0])
+
+                    #Args: model_name model_xml robot_namespace initial_pose reference_frame
+                    self.resp = self.spawn_model_proxy(item_name, item_xml, "", item_pose.pose, self.reference_frame)
+                    # Update some global variables
+                    self.counter_barrier += 1  # number of walls in the world
+                    for i in range(len(self.world_xy)):  # Increase the world size
+                        self.world_xy[i] += 1 if (self.world_xy[i] > 0) else - 1
+                        self.robot_xy[i] += 2 if (self.robot_xy[i] > 0) else - 2
+                    print("New objects-world size: ", self.world_xy)
+                    print("New robot-world size: ", self.robot_xy)
+                except (rospy.ServiceException) as e:
+                    rospy.logerr("/gazebo/spawn_sdf_model service call failed")
+
+
         if self.reset_position is True:
-            rospy.wait_for_service('/gazebo/set_model_state')
-            self.objects_list = None
-            while self.objects_list == None:
-                #  Wait the callback updates the object list
-                # print("Waiting for object list")
-                # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
-                pass
+            print("Waiting for /gazebo/set_model_state service")
+            self.resp = rospy.wait_for_service('/gazebo/set_model_state')
+            # self.objects_list = None
+            # while self.objects_list == None:
+            #     #  Wait the callback updates the object list
+            #     # print("Waiting for object list")
+            #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+            #     pass
 
             # Once in a while, reset objects position
             # TODO: regenerate the world if the robot cannot find a new position for X times
             if self.episodes_counter % self.episodes_reset == 0:
                 print("First, clean the environment removing the objects")
                 for i in range(0, len(self.objects_list.name)):
-                    if self.objects_list.name[i] == "ground_list":
-                        pass
+                    if self.objects_list.name[i] == "ground_plane":
+                        continue
                     else:
                         # For every object, find a new random position and check if it's available
                         tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                                      model_name=self.objects_list.name[i],
                                                                      world_size=[-25.0, -50.0, -25.0, -30.0])
                         try:
-                            self.set_position_proxy(tmp_pose)
+                            self.resp = self.set_position_proxy(tmp_pose)
                         except (rospy.ServiceException) as e:
                             rospy.logerr("/gazebo/set_model_state service call failed")
                 print("Second, generate random position...")
                 for i in range(0, len(self.objects_list.name)):
-                    if self.objects_list.name[i] == "ground_list":
-                        pass
+                    if self.objects_list.name[i] == "ground_plane":
+                        continue
                     else:
                         # For every object, find a new random position and check if it's available
                         # print("Waiting for object list")
-                        self.objects_list = None
-                        while self.objects_list == None:
-                            #  Wait the callback updates the object list
-                            # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
-                            # print("Waiting for object list")
-                            pass
+                        # self.objects_list = None
+                        # while self.objects_list == None:
+                        #     #  Wait the callback updates the object list
+                        #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                        #     # print("Waiting for object list")
+                        #     pass
                         self.pose_acceptable = False
                         if self.objects_list.name[i] != self.model_name:
                             while self.pose_acceptable == False:
-                                # print("[{}] generating pose".format(i))
+                                print("[{}] generating pose".format(self.objects_list.name[i]))
                                 tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                                             model_name=self.objects_list.name[i],
                                                                             world_size=self.world_xy)
                                 self.pose_acceptable = self.nav_utils.checkPose(tmp_pose, self.objects_list)
                             # if self.objects_list.name[i] != self.model_name:
                             #     self.initial_pose = tmp_pose
+                            print("Set object pose!")
                             try:
-                                self.set_position_proxy(tmp_pose)
+                                self.resp = self.set_position_proxy(tmp_pose)
                             except (rospy.ServiceException) as e:
                                 rospy.logerr("/gazebo/set_model_state service call failed")
                         # rospy.sleep(2)
@@ -550,12 +585,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             # Reset robot pose at every episode
             # print("Resetting robot position")
             self.pose_acceptable = False
-            self.objects_list = None
-            while self.objects_list == None:
-                #  Wait the callback updates the object list
-                # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
-                # print("Waiting for object list")
-                pass
+            # self.objects_list = None
+            # while self.objects_list == None:
+            #     #  Wait the callback updates the object list
+            #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+            #     # print("Waiting for object list")
+            #     pass
 
             while self.pose_acceptable == False:
                 # print("Selecting random pose")
@@ -564,7 +599,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                                                                      world_size=self.robot_xy)
                 self.pose_acceptable = self.nav_utils.checkPose(self.initial_pose, self.objects_list)
             try:
-                self.set_position_proxy(self.initial_pose)
+                print("Assign new pose to robot!")
+                self.resp = self.set_position_proxy(self.initial_pose)
             except (rospy.ServiceException) as e:
                 rospy.logerr("/gazebo/set_model_state service call failed")
 
@@ -637,7 +673,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         if self.synch_mode == True:
             # Pause the simulation
-            rospy.wait_for_service('/gazebo/pause_physics')
+            self.resp = rospy.wait_for_service('/gazebo/pause_physics')
             try:
                 self.pause()
                 # print("Pausing")
