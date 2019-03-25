@@ -42,7 +42,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.positive_reward = 200
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
-        self.proximity_distance = 2.0
+        self.proximity_distance = 2.5
         self.world_xy = [-3.0, 3.0, -3.0, 3.0]
         # self.world_y = [-6.0, 6.0]
         self.robot_xy = [-4.0, 4.0, -4.0, 4.0]
@@ -58,14 +58,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
-        self.use_depth = False
+        self.use_depth = True
         self.registered = False
         self.use_combined_depth = False
         self.use_stack_memory = False
-        self.use_curriculum = False
+        self.use_curriculum = True
         self.curriculum_episode = 350
         self.episodes_reset = 15
-        self.counter_barrier = 2
+        self.counter_barrier = 0  # Counted in the first episode
         # Camera setting
         self.img_rows = 84
         self.img_cols = 84
@@ -113,6 +113,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
         self.episodes_counter = 0
         self.steps_counter = 0
+        self.episode_return = 0
+        self.moving_average_return = 0
+        self.episode_average_return = 25 # Approximately 5000 steps
+        self.curriculum_percentage = 0.7
+        self.last_episodes_reward = np.array([0] * self.episode_average_return)
+
 
         ##########################
         ##     ACTION SPACE     ##
@@ -218,7 +224,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             rospy.logerr("Not receiving images")
 
 
-    def depthCallback(self, message):  # TODO still too noisy!
+    def depthCallback(self, message):
         """
         Callback method for the subscriber of the depth camera
         """
@@ -252,7 +258,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         else:
             #  The original resolution is 424*512, crop it to 424*424
             cv_image = cv_image[:, 43:467]
-        # cv_image[np.isnan(cv_image)] = 0 # TODO: faster method (10x) than np.nan_to_num which does not work
+        # cv_image[np.isnan(cv_image)] = 0 # TODO: faster method (they say 10x) than np.nan_to_num which does not work
         cv_image = np.nan_to_num(cv_image)
         # cv2.imwrite('/home/pulver/Desktop/img_original.png', cv_image)
         cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
@@ -323,7 +329,6 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             - done (status)
             - action
             - observation
-            - dictionary (#TODO clarify)
         """
         self.iterator += 1
 
@@ -446,6 +451,9 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                 # Reset the last collision
                 self.last_collision = None
 
+        # Keep track of the cumulative reward in the episode
+        self.episode_return += self.reward
+
         #########################
         ##         DONE        ##
         #########################
@@ -476,14 +484,20 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
-
-        # Reset the step iterator
-        self.steps_counter += self.iterator
-        self.iterator = 0
-        self.episodes_counter += 1
-
         print("====== New episode: {} [{}] ======".format(self.episodes_counter, self.steps_counter))
+        # In the fist episodes, just collect all the rewards
+        if self.episodes_counter < self.episode_average_return:
+            self.last_episodes_reward[self.episodes_counter] = self.episode_return
+        # and the start to calculate the moving average
+        else:
+            self.last_episodes_reward = np.delete(self.last_episodes_reward, [0])
+            self.last_episodes_reward = np.append(self.last_episodes_reward, self.episode_return)
 
+        self.moving_average_return = np.average(self.last_episodes_reward)
+        print("Episodes reward: ", self.last_episodes_reward)
+        print("Moving average: {} > {} = {}".format(self.moving_average_return,
+                                                    (self.curriculum_percentage * self.positive_reward),
+                                                    self.moving_average_return > (self.curriculum_percentage * self.positive_reward)))
 
         if self.synch_mode == True:
             # Unpause simulation
@@ -500,40 +514,41 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         #     msg = rospy.wait_for_message("/collision_data", ContactState)
 
         # If using curriculum learning, add a new object once in a while
-        if self.use_curriculum is True:
-            if self.episodes_counter % self.curriculum_episode == 0:
-                #self.resp = rospy.wait_for_service("gazebo/spawn_sdf_model")
-                try:
-                    item_name = "drc_practice_orange_jersey_barrier{}".format(self.counter_barrier)
-                    item_xml =  "/home/pulver/.gazebo/models/drc_practice_orange_jersey_barrier/model.sdf"
-                    with open(item_xml, "r") as f:
-                        item_xml = f.read()
-                    # NB: nav_utils.getRandomPosition() return a ModelState object, we need only the pose
-                    item_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
-                                                                 model_name=item_name,
-                                                                 world_size=[-25.0, -50.0, -25.0, -30.0])
+        if self.use_curriculum is True and self.moving_average_return > (self.curriculum_percentage * self.positive_reward):
+            # Reset the array containing the latest reward to avoid to generate too many additional obstacles
+            self.last_episodes_reward = np.zeros(shape=np.shape(self.last_episodes_reward))
+            #self.resp = rospy.wait_for_service("gazebo/spawn_sdf_model")
+            try:
+                item_name = "drc_practice_orange_jersey_barrier{}".format(self.counter_barrier)
+                item_xml =  "/home/pulver/.gazebo/models/drc_practice_orange_jersey_barrier/model.sdf"
+                with open(item_xml, "r") as f:
+                    item_xml = f.read()
+                # NB: nav_utils.getRandomPosition() return a ModelState object, we need only the pose
+                item_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
+                                                             model_name=item_name,
+                                                             world_size=[-25.0, -50.0, -25.0, -30.0])
 
-                    #Args: model_name model_xml robot_namespace initial_pose reference_frame
-                    self.resp = self.spawn_model_proxy(item_name, item_xml, "", item_pose.pose, self.reference_frame)
-                    # Update some global variables
-                    self.counter_barrier += 1  # number of walls in the world
-                    for i in range(len(self.world_xy)):  # Increase the world size
-                        self.world_xy[i] += 1 if (self.world_xy[i] > 0) else - 1
-                        self.robot_xy[i] += 2 if (self.robot_xy[i] > 0) else - 2
-                    print("New objects-world size: ", self.world_xy)
-                    print("New robot-world size: ", self.robot_xy)
-                except (rospy.ServiceException) as e:
-                    rospy.logerr("/gazebo/spawn_sdf_model service call failed")
+                #Args: model_name model_xml robot_namespace initial_pose reference_frame
+                self.resp = self.spawn_model_proxy(item_name, item_xml, "", item_pose.pose, self.reference_frame)
+                # Update some global variables
+                self.counter_barrier += 1  # number of walls in the world
+                for i in range(len(self.world_xy)):  # Increase the world size
+                    self.world_xy[i] += 1 if (self.world_xy[i] > 0) else - 1
+                    self.robot_xy[i] += 2 if (self.robot_xy[i] > 0) else - 2
+                print("New objects-world size: ", self.world_xy)
+                print("New robot-world size: ", self.robot_xy)
+            except (rospy.ServiceException) as e:
+                rospy.logerr("/gazebo/spawn_sdf_model service call failed")
 
 
         if self.reset_position is True:
             print("Waiting for /gazebo/set_model_state service")
             self.resp = rospy.wait_for_service('/gazebo/set_model_state')
-            # self.objects_list = None
-            # while self.objects_list == None:
-            #     #  Wait the callback updates the object list
-            #     # print("Waiting for object list")
-            #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+            self.objects_list = None
+            while self.objects_list == None:
+                #  Wait the callback updates the object list
+                # print("Waiting for object list")
+                self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
             #     pass
 
             # Once in a while, reset objects position
@@ -548,6 +563,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                         tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                                      model_name=self.objects_list.name[i],
                                                                      world_size=[-25.0, -50.0, -25.0, -30.0])
+
+                        # In the first episode, count how many barriers are there
+                        if self.episodes_counter == 0 and "barrier" in self.objects_list.name[i]:
+                            self.counter_barrier += 1
                         try:
                             self.resp = self.set_position_proxy(tmp_pose)
                         except (rospy.ServiceException) as e:
@@ -559,10 +578,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                     else:
                         # For every object, find a new random position and check if it's available
                         # print("Waiting for object list")
-                        # self.objects_list = None
-                        # while self.objects_list == None:
-                        #     #  Wait the callback updates the object list
-                        #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                        self.objects_list = None
+                        while self.objects_list == None:
+                            #  Wait the callback updates the object list
+                            self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
                         #     # print("Waiting for object list")
                         #     pass
                         self.pose_acceptable = False
@@ -584,14 +603,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
             # Reset robot pose at every episode
             # print("Resetting robot position")
-            self.pose_acceptable = False
-            # self.objects_list = None
-            # while self.objects_list == None:
-            #     #  Wait the callback updates the object list
-            #     # self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+
+            self.objects_list = None
+            while self.objects_list == None:
+                #  Wait the callback updates the object list
+                self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
             #     # print("Waiting for object list")
             #     pass
-
+            self.pose_acceptable = False
             while self.pose_acceptable == False:
                 # print("Selecting random pose")
                 self.initial_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
@@ -689,7 +708,16 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         self.last_step_ts = self.last_clock_msg
         self.rospy_time_stop = float(rospy.Time.now().nsecs)
+
+
+        # Reset the step iterator
+        self.steps_counter += self.iterator
+        self.iterator = 0
+        self.episode_return = 0
+        self.episodes_counter += 1
         self.done = False
+        self.reward = 0
+        self.last_collision = None
 
         return self.obs
         # return last_ob
