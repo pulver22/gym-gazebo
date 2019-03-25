@@ -2,7 +2,7 @@
 ## Table of Contents
 - [Installation](#installation)
 	- [Ubuntu 18.04](#ubuntu-1804)
-	- [Ubuntu 16.04](#ubuntu-1604)
+	- [Ubuntu 16.04 (**deprecated**)](#ubuntu-1604)
 	- [Ubuntu 14.04 (**deprecated**)](#ubuntu-1404)
 	- [Docker (**deprecated**)](#docker)
 
@@ -149,6 +149,8 @@ sudo apt-get install \
 cmake gcc g++ qt4-qmake libqt4-dev \
 libusb-dev libftdi-dev \
 python3-defusedxml python3-vcstool \
+libbluetooth-dev libspnav-dev \
+pyqt4-dev-tools libcwiid-dev \
 ros-kinetic-octomap-msgs        \
 ros-kinetic-joy                 \
 ros-kinetic-geodesy             \
@@ -165,7 +167,8 @@ ros-kinetic-kdl-conversions     \
 ros-kinetic-eigen-conversions   \
 ros-kinetic-tf2-sensor-msgs     \
 ros-kinetic-pcl-ros \
-ros-kinetic-navigation
+ros-kinetic-navigation \
+ros-kinetic-ar-track-alvar-msgs
 ```
 
 ```
@@ -184,6 +187,7 @@ echo "## Sophus installed ##\n"
 #### Gazebo gym
 
 ```bash
+cd 
 git clone https://github.com/erlerobot/gym-gazebo
 cd gym-gazebo
 sudo pip3 install -e .
@@ -261,6 +265,7 @@ sudo apt-get remove .*gazebo.* && sudo apt-get update && sudo apt-get install ga
 #### Gym Gazebo Pip
 
 ```bash
+cd 
 git clone https://github.com/erlerobot/gym-gazebo
 cd gym-gazebo
 sudo pip install -e .
@@ -463,7 +468,7 @@ xvfb-run -s "-screen 0 1400x900x24" bash
 
 If you have an equivalent release of Gazebo installed locally, you can connect to the gzserver inside the container using gzclient GUI by setting the address of the master URI to the containers public address.
 ```
-export GAZEBO_MASTER_IP=$(sudo docker inspect --format '{{ .NetworkSettings.IPAddress }}' "id of running container")
+export GAZEBO_ID=`docker ps | grep gym-gazebo | awk '{print $1}'`
+export GAZEBO_MASTER_IP=$(sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $GAZEBO_ID)
 export GAZEBO_MASTER_URI=$GAZEBO_MASTER_IP:11345
-gzclient
 ```
