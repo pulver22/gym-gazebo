@@ -56,7 +56,7 @@
           </range>
         </ray>
 
-        <plugin name="gazebo_ros_${name}_controller" filename="librotors_gazebo_sonar_plugin.so">
+        <plugin name="gazebo_ros_${name}_controller" filename="libhector_gazebo_ros_sonar.so">
           <gaussianNoise>0.005</gaussianNoise>
           <topicName>${ros_topic}</topicName>
           <frameId>${name}_link</frameId>

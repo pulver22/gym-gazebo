@@ -290,7 +290,7 @@ class NavigationUtilities():
         """
 
         for i in range(0, len(objects_msg.name)):
-            # print("Checking pose ", (i+1), "of", len(objects_msg.name))
+            print("Checking pose ", (i+1), "of", len(objects_msg.name))
             if (objects_msg.pose[i].position.x - self.proximity_distance < robot_pose.pose.position.x < objects_msg.pose[i].position.x + self.proximity_distance):
                 if (objects_msg.pose[i].position.y - self.proximity_distance < robot_pose.pose.position.y < objects_msg.pose[i].position.y + self.proximity_distance):
                     return False
