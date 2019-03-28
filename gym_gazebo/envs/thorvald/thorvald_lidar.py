@@ -28,7 +28,7 @@ from gym_gazebo.envs.thorvald.navigation_utilities import NavigationUtilities
 
 
 
-class GazeboThorvaldMlpPPOEnvSlim(gazebo_env.GazeboEnv):
+class GazeboThorvaldLidarEnv(gazebo_env.GazeboEnv):
 
     def __init__(self):
         # Launch the simulation with the given launchfile name

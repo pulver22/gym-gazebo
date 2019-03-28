@@ -28,7 +28,7 @@ from gym_gazebo.envs.thorvald.navigation_utilities import NavigationUtilities
 
 
 
-class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
+class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
 
     def __init__(self):
 
@@ -42,7 +42,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.positive_reward = 200
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
-        self.proximity_distance = 2.5
+        self.proximity_distance = 2.0
         self.world_xy = [-3.0, 3.0, -3.0, 3.0]
         # self.world_y = [-6.0, 6.0]
         self.robot_xy = [-4.0, 4.0, -4.0, 4.0]
@@ -58,21 +58,35 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
-        self.use_depth = True
+        self.use_depth = False
         self.registered = False
         self.use_combined_depth = False
+        self.use_stack_observation = True
         self.use_stack_memory = False
-        self.use_curriculum = True
+        self.use_curriculum = False
         self.curriculum_episode = 350
         self.episodes_reset = 15
         self.counter_barrier = 0  # Counted in the first episode
         # Camera setting
+        self.crop_image = False
         self.img_rows = 84
         self.img_cols = 84
+        self.obs_cols = self.img_cols
+        if self.crop_image is False:
+            self.img_cols = int(1920 * self.img_rows / 1080)  # Assuming the original image is (1080*1920)
         self.img_channels = 1
+        self.num_cameras = 4
+        # If observations are stack, we will have more channels (one for each camera)
+        if self.use_stack_observation is True:
+            self.img_channels = self.num_cameras
+            if self.crop_image is False:
+                self.obs_cols = self.img_cols
+        # otherwise we have one channels but many more columns
+        else:
+            self.obs_cols = self.img_cols * self.num_cameras
         if self.use_combined_depth is True:
             self.img_channels += 1
-        self.obs = np.zeros(shape=(self.img_rows, self.img_cols + 1, self.img_channels))
+        self.obs = np.zeros(shape=(self.img_rows, self.obs_cols + 1, self.img_channels))
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
                                       "/home/pulver/ncnr_ws/src/gazebo-contactMonitor/launch/contactMonitor.launch")
@@ -85,7 +99,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         print("reset_position: ", self.reset_position)
         print("use_depth: ", self.use_depth)
         print("use_combined_depth: ", self.use_combined_depth)
-        print("use_stack_memory: ", self.use_stack_memory)
+        print("use_stack_observation: ", self.use_stack_observation)
+        # print("use_stack_memory: ", self.use_stack_memory)
         print("Observation shape: ", np.shape(self.obs))
         print("use_curriculum: ", self.use_curriculum)
         print("=======================")
@@ -97,7 +112,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         #        (self.use_stack_memory is False and self.use_depth is True), "If using a stack of images, depth is not supported yet"
         ##########################
 
-        self._observation_msg = None
+        self._observation_msg = [None] * 4
         self._depth_msg = None
         self._lidar_msg = None
         self._last_obs_header = None
@@ -107,7 +122,10 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # Lidar setting
         self.min_range = 0.5
         # Goal_info needs to have same dimension  of images in order to be concatenated
-        self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
+        if self.use_stack_observation is True:
+            self.goal_info = np.zeros(shape=(self.img_rows, 1, self.num_cameras))
+        else:
+            self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
         self.reward = 0
         self.done = False
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
@@ -115,7 +133,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.steps_counter = 0
         self.episode_return = 0
         self.moving_average_return = 0
-        self.episode_average_return = 25 # Approximately 5000 steps
+        self.episode_average_return = 40
         self.curriculum_percentage = 0.7
         self.last_episodes_reward = np.array([0] * self.episode_average_return)
 
@@ -141,7 +159,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # self.observation_space = spaces.Box(self.observation_low, self.observation_high, shape=(self.img_rows, self.img_cols, self.img_channels), dtype=np.uint8)  # Without goal info
         self.observation_space = spaces.Box(low=self.observation_low,
                                             high=self.observation_high,
-                                            shape=(self.img_rows, self.img_cols + 1, self.img_channels),
+                                            shape=(self.img_rows, self.obs_cols + 1, self.img_channels),
                                             dtype=np.float16)  # With goal info
 
         ##########################
@@ -170,7 +188,14 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##          ROS         ##
         ##########################
         self.vel_pub = rospy.Publisher('nav_vel', Twist, queue_size=5)
-        self.camera_sub = rospy.Subscriber('/thorvald_ii/kinect2/hd/image_color_rect', Image, self.observationCallback)
+        self.camera1_sub = rospy.Subscriber('/thorvald_ii/kinect2/1/hd/image_color_rect', Image,
+                                            self.observation1Callback)
+        self.camera2_sub = rospy.Subscriber('/thorvald_ii/kinect2/2/hd/image_color_rect', Image,
+                                            self.observation2Callback)
+        self.camera3_sub = rospy.Subscriber('/thorvald_ii/kinect2/3/hd/image_color_rect', Image,
+                                            self.observation3Callback)
+        self.camera4_sub = rospy.Subscriber('/thorvald_ii/kinect2/4/hd/image_color_rect', Image,
+                                            self.observation4Callback)
         if self.registered is True:
             self.depth_sub = rospy.Subscriber('depth_registered/image_rect', Image, self.depthCallback )  # registered depth
         else:
@@ -211,18 +236,56 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         self.last_clock_msg = int(message.clock.nsecs)
         # print(self.last_clock_msg)
 
-    def observationCallback(self, message):
+    def observation1Callback(self, message):
+        """
+        Callback method for the subscriber of the camera
+        """
+
+        # if message.header.stamp.secs != self._last_obs_header:
+        #     self._last_obs_header = message.header.stamp.secs
+        try:
+            self._observation_msg[0] = message
+        except:
+            rospy.logerr("[0]Not receiving images")
+
+    def observation2Callback(self, message):
         """
         Callback method for the subscriber of the camera
         """
 
         # print("Image received")
-        if message.header.seq != self._last_obs_header:
-            self._last_obs_header = message.header.seq
-            self._observation_msg = message
-        else:
-            rospy.logerr("Not receiving images")
+        # if message.header.stamp.secs != self._last_obs_header:
+            # self._last_obs_header = message.header.seq
+        try:
+            self._observation_msg[1] = message
+        except:
+            rospy.logerr("[1]Not receiving images")
 
+    def observation3Callback(self, message):
+        """
+        Callback method for the subscriber of the camera
+        """
+
+        # print("Image received")
+        # if message.header.stamp.secs != self._last_obs_header:
+            # self._last_obs_header = message.header.seq
+        try:
+            self._observation_msg[2] = message
+        except:
+            rospy.logerr("[2]Not receiving images")
+
+    def observation4Callback(self, message):
+        """
+        Callback method for the subscriber of the camera
+        """
+
+        # print("Image received")
+        # if message.header.stamp.secs != self._last_obs_header:
+            # self._last_obs_header = message.header.seq
+        try:
+            self._observation_msg[3] = message
+        except:
+            rospy.logerr("[3]Not receiving images")
 
     def depthCallback(self, message):
         """
@@ -245,7 +308,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         depth_message = None
         while depth_message is None:
             try:
-                depth_message = self._depth_msg
+                depth_message = np.copy(self._depth_msg)
                 # print("depth_message: ", depth_message)
             except:  # CvBridgeError as ex:
                 rospy.logerr("ERROR!!")  # , ex)
@@ -253,11 +316,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # the values is the distance in mm in z axis
         cv_image = self.bridge.imgmsg_to_cv2(depth_message, "passthrough")
         # Crop the image to be 1080*1080, keeping the same centre of the original one
-        if self.registered is True:
-            cv_image = cv_image[:, 419:1499]
-        else:
-            #  The original resolution is 424*512, crop it to 424*424
-            cv_image = cv_image[:, 43:467]
+        if self.crop_image is True:
+            if self.registered is True:
+                cv_image = cv_image[:, 419:1499]
+            else:
+                #  The original resolution is 424*512, crop it to 424*424
+                cv_image = cv_image[:, 43:467]
         # cv_image[np.isnan(cv_image)] = 0 # TODO: faster method (they say 10x) than np.nan_to_num which does not work
         cv_image = np.nan_to_num(cv_image)
         # cv2.imwrite('/home/pulver/Desktop/img_original.png', cv_image)
@@ -266,7 +330,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         cv_image_norm = cv_image_norm / 255.0
         # cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
         # Resize to the desired size
-        cv_image = cv2.resize(cv_image_norm, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
+        cv_image = cv2.resize(cv_image_norm, (self.img_cols, self.img_rows), interpolation=cv2.INTER_CUBIC)
         depth_message =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1], 1)
         return depth_message
 
@@ -278,22 +342,49 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # print("Camera Empty: ", obs_message)
         while obs_message is None:
             try:
-                obs_message = self._observation_msg
+                obs_message = np.copy(self._observation_msg)
+                # obs_message = self._observation_msg
             except:# CvBridgeError as ex:
                 rospy.logerr ("ERROR!!")#, ex)
-        # Convert from sensor_msgs::Image to cv::Mat
-        cv_image = self.bridge.imgmsg_to_cv2(obs_message, desired_encoding="bgr8")
-        # Convert the image to grayscale
-        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        # Crop the image to be 1080*1080, keeping the same centre of the original one
-        cv_image = cv_image[:, 419:1499]
-        # Normalize the depth image to fall between 0 (black) and 1 (white)
-        cv_image_norm = cv_image / 255.0
-        # cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
-        # Resize and reshape the image according to the network input size
-        cv_image = cv2.resize(cv_image_norm, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
-        obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
-        return obs_message
+
+        if None in self._observation_msg:
+            return None
+
+        # print("Observation: ", obs_message)
+        stack_observation = np.zeros(shape=(self.img_rows, self.img_cols, self.num_cameras))
+
+        for i in range(self.num_cameras):
+            # Convert from sensor_msgs::Image to cv::Mat
+            cv_image = self.bridge.imgmsg_to_cv2(obs_message[i], "passthrough")
+            # Convert the image to grayscale
+            cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+            # Crop the image to be 1080*1080, keeping the same centre of the original one
+            if self.crop_image is True:
+                cv_image = cv_image[:, 419:1499]
+            # Normalize the depth image to fall between 0 (black) and 1 (white)
+            cv_image_norm = cv_image / 255.0
+            # cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+            # Resize and reshape the image according to the network input size
+            cv_image = cv2.resize(cv_image_norm, (self.img_cols, self.img_rows), interpolation=cv2.INTER_CUBIC)
+
+            # if self.use_stack_memory is True:
+            #     stack_observation[:,:,i] = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
+            # else:
+            obs_message[i] = cv_image.reshape(cv_image.shape[0], cv_image.shape[1])
+            # print("{} : {}".format(i, np.shape(obs_message[i])))
+            stack_observation[:,:,i] = obs_message[i]
+            if i != 0:
+                obs_message[0] = np.append(obs_message[0], obs_message[i], axis=1)
+
+        if self.use_stack_observation is True:
+            return stack_observation
+        else:
+            return np.reshape(obs_message[0], newshape=(obs_message[0].shape[0], obs_message[0].shape[1], 1))
+
+        # final_obs = None
+        # for i in range(self.num_cameras):
+        #     final_obs = np.append(final_obs, obs_message[i], axis=1)
+        # return final_obs
 
 
     def lidarCallback(self, message):
@@ -349,7 +440,7 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
             # Unpause simulation
             self.resp = rospy.wait_for_service('/gazebo/unpause_physics')
             try:
-                self.unpause()
+                self.resp = self.unpause()
                 # print("UnPausing")
             except (rospy.ServiceException) as e:
                 print("/gazebo/unpause_physics service call failed")
@@ -374,24 +465,31 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         ##         STATE       ##
         #########################
         last_ob = None
-        last_depth = None
-        while (last_ob is None and last_depth is None):
+        while last_ob is None:
             try:
                 if self.fake_images == True:
-                    last_ob = np.zeros(shape=(84, 84, 1))  # DEBUG
+                    last_ob = np.zeros(shape=(self.img_rows, self.img_cols, self.img_channels))  # DEBUG
                 else:
                     last_ob = self.takeObservation()
-                    last_depth = self.takeDepth()
-                    # self.takeDepth()
-                    # last_ob = self.observation
-                    # print("[Image] min: {}, max: {}".format(np.min(last_ob), np.max(last_ob)))
             except:
+                # When problems arise acquiring the observation, send null velocity to not make the robot move
+                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0,0]))
                 rospy.logerr("Problems acquiring the observation")
+
+        if self.use_depth is True:
+            last_depth = None
+            while (last_depth is None):
+                try:
+                    last_depth = self.takeDepth()
+                except:
+                    # When problems arise acquiring the observation, send null velocity to not make the robot move
+                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
+                    # rospy.logerr("Problems acquiring the depth observation")
 
         # Calculate actual distance from robot
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
-        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
+        self.goal_info[0,:,:] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
 
         # Calculate the relative orientation of the robot to the goal
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
@@ -405,12 +503,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
-        self.goal_info[1] = self.robot_rel_orientation
+        self.goal_info[1,:,:] = self.robot_rel_orientation
         # print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
         # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            self.goal_info[1,:,:] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2,:,:] = math.sin(self.robot_rel_orientation)
             # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
@@ -424,30 +522,43 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
         #
-        if self.use_stack_memory is True and self.use_depth is False:
+        # if self.use_stack_memory is True and self.use_depth is False:
+        if self.use_stack_memory is True:
             # TODO: modify to take care of stack of observation + depth
             for i in range(self.img_channels -1, 0, -1):
                 self.obs[:,:, i] = self.obs[:,:,i-1]
-                # self.obs[:,:,3] = self.obs[:,:,2]
-                # self.obs[:,:,2] = self.obs[:,:,1]
-                # self.obs[:,:,1] = self.obs[:,:,0]
 
+
+        # if self.use_stack_observation is True:
+        #     tmp_list = [self.goal_info] * self.num_cameras
+        #     self.goal_info =  np.concatenate(tmp_list, axis=2)
+        # else:
+        # last_ob = np.reshape(last_ob, newshape=(last_ob.shape[0], last_ob.shape[1], 1))
+        self.obs = np.append(last_ob, self.goal_info, axis=1)
         # If you want to use only depth image
-        if self.use_depth is True and self.use_combined_depth is False:
-            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
-        else:
-            self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84,85))
+        # if self.use_depth is True and self.use_combined_depth is False:
+        #     self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols + 1, self.img_channels))
+        # else:
+        #     self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols + 1, self.img_channels))
+
+        # # If you want to use only depth image
+        # if self.use_depth is True and self.use_combined_depth is False:
+        #     self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, (self.img_cols * self.num_cameras) + 1))
+        # else:
+        #     self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, (self.img_cols * self.num_cameras) + 1))
 
         if self.use_combined_depth is True:
-            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
+            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, (self.img_cols * self.num_cameras) + 1))
 
         #########################
         ##        REWARD       ##
         #########################
         if self.done == False:
             self.reward = self.nav_utils.getReward(self.distance, self.robot_rel_orientation)
+            print(self.reward)
             if self.collision_detection == True:
                 self.reward += self.nav_utils.getCollisionPenalty(self.last_collision)
+                print("     ", self.reward)
                 # Reset the last collision
                 self.last_collision = None
 
@@ -515,8 +626,6 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         # If using curriculum learning, add a new object once in a while
         if self.use_curriculum is True and self.moving_average_return > (self.curriculum_percentage * self.positive_reward):
-            # Reset the array containing the latest reward to avoid to generate too many additional obstacles
-            self.last_episodes_reward = np.zeros(shape=np.shape(self.last_episodes_reward))
             #self.resp = rospy.wait_for_service("gazebo/spawn_sdf_model")
             try:
                 item_name = "drc_practice_orange_jersey_barrier{}".format(self.counter_barrier)
@@ -537,6 +646,8 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
                     self.robot_xy[i] += 2 if (self.robot_xy[i] > 0) else - 2
                 print("New objects-world size: ", self.world_xy)
                 print("New robot-world size: ", self.robot_xy)
+                # Reset the array containing the latest reward to avoid to generate too many additional obstacles
+                self.last_episodes_reward = np.zeros(shape=np.shape(self.last_episodes_reward))
             except (rospy.ServiceException) as e:
                 rospy.logerr("/gazebo/spawn_sdf_model service call failed")
 
@@ -629,29 +740,46 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
 
         # Take an observation
         last_ob = None
-        last_depth = None
+        counter = 0
         while (last_ob is None):
             try:
                 if self.fake_images == True:
-                    last_ob = np.zeros(shape=(84, 84, 1))  # DEBUG
+                    last_ob = np.zeros(shape=(self.img_rows, self.img_cols, self.img_channels))  # DEBUG
                 else:
+                    # counter += 1
+                    # print(counter)
                     last_ob = self.takeObservation()
+
             except:
+
+                # When problems arise acquiring the observation, send null velocity to not make the robot move
+                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
                 rospy.logerr("Problems acquiring the observation")
 
-        while (last_depth is None):
-            try:
-                last_depth = self.takeDepth()
-            except:
-                rospy.logerr("Problems acquiring the observation")
+        # print("Shape: ", np.shape(last_ob))
+        # for i in range(1, self.num_cameras):
+        #     last_ob[0] = np.append(last_ob[0], last_ob[i], axis=1)
+        # last_ob = last_ob[0]
+        # print("Shape: ", np.shape(last_ob))
 
 
-        # print("Observation acquired!")
+        if self.use_depth is True:
+            last_depth = None
+            while (last_depth is None):
+                try:
+                    last_depth = self.takeDepth()
+                except:
+                    # When problems arise acquiring the observation, send null velocity to not make the robot move
+                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
+                    # rospy.logerr("Problems acquiring the depth observation")
+
+
+        print("Observation acquired!")
         # Reset the target position and calculate distance robot-target
         self.target_position = self.nav_utils.getRandomTargetPosition(self.initial_pose)
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
-        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
+        self.goal_info[0,:,:] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
         # print("Distance-Goal found!")
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
@@ -659,12 +787,12 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
-        self.goal_info[1] = self.robot_rel_orientation
-        # print("Orientation-Goal found!")
+        self.goal_info[1,:,:] = self.robot_rel_orientation
+        print("Orientation-Goal found!")
         # print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            self.goal_info[1,:,:] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2,:,:] = math.sin(self.robot_rel_orientation)
             # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
@@ -675,26 +803,32 @@ class GazeboThorvaldCameraCnnPPOEnvSlim(gazebo_env.GazeboEnv):
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
-
+        # if self.use_stack_observation is True:
+        #     tmp_list = [self.goal_info] * self.num_cameras
+        #     self.goal_info =  np.concatenate(tmp_list, axis=2)
+        # else:
+        # last_ob = np.reshape(last_ob, newshape=(last_ob.shape[0], last_ob.shape[1], 1))
         # If you want to use only depth image
-        if self.use_depth is True and self.use_combined_depth is False:
-            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
-        else:
-            self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(84, 85))
+        self.obs = np.append(last_ob, self.goal_info, axis=1)
+        # if self.use_depth is True and self.use_combined_depth is False:
+        #     self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols  + 1, self.img_channels))
+        # else:
+        #     self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols + 1, self.img_channels))
 
         # TODO: modify to take care of stack of observation + depth
-        if self.use_stack_memory is True and self.use_depth is False:
+        # if self.use_stack_memory is True and self.use_depth is False:
+        if self.use_stack_memory is True:
             for i in range(1, self.img_channels):
                 self.obs[:,:,i] = self.obs[:,:,0]
 
         if self.use_combined_depth is True:
-            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(84, 85))
+            self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols + 1))
 
         if self.synch_mode == True:
             # Pause the simulation
             self.resp = rospy.wait_for_service('/gazebo/pause_physics')
             try:
-                self.pause()
+                self.resp = self.pause()
                 # print("Pausing")
             except (rospy.ServiceException) as e:
                 print("/gazebo/pause_physics service call failed")
