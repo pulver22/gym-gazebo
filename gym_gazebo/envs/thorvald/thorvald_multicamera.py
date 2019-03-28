@@ -112,8 +112,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         #        (self.use_stack_memory is False and self.use_depth is True), "If using a stack of images, depth is not supported yet"
         ##########################
 
-        self._observation_msg = [None] * 4
-        self._depth_msg = None
+        self._observation_msg = [None] * self.num_cameras
+        self._depth_msg = [None] * self.num_cameras
         self._lidar_msg = None
         self._last_obs_header = None
         self._last_depth_header = None
@@ -199,7 +199,11 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         if self.registered is True:
             self.depth_sub = rospy.Subscriber('depth_registered/image_rect', Image, self.depthCallback )  # registered depth
         else:
-            self.depth_sub = rospy.Subscriber('/thorvald_ii/kinect2/sd/image_depth_rect', Image, self.depthCallback)
+            self.depth1_sub = rospy.Subscriber('/thorvald_ii/kinect2/1/sd/image_depth_rect', Image, self.depth1Callback)
+            self.depth2_sub = rospy.Subscriber('/thorvald_ii/kinect2/2/sd/image_depth_rect', Image, self.depth2Callback)
+            self.depth3_sub = rospy.Subscriber('/thorvald_ii/kinect2/3/sd/image_depth_rect', Image, self.depth3Callback)
+            self.depth4_sub = rospy.Subscriber('/thorvald_ii/kinect2/4/sd/image_depth_rect', Image, self.depth4Callback)
+
         # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clockCallback)
         self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelStates, self.objects_callback)
@@ -287,18 +291,61 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         except:
             rospy.logerr("[3]Not receiving images")
 
-    def depthCallback(self, message):
+    def depth1Callback(self, message):
         """
         Callback method for the subscriber of the depth camera
         """
         # print("Depth callback!")
-        if message.header.seq != self._last_depth_header:
-            self._last_depth_header = message.header.seq
-            self._depth_msg = message
+        # if message.header.seq != self._last_depth_header:
+        #     self._last_depth_header = message.header.seq
+        try:
+            self._depth_msg[0] = message
             # print(self._depth_msg.header.seq)
-        else:
+        # else:
+        except:
             rospy.logerr("Not receiving images")
 
+    def depth2Callback(self, message):
+        """
+        Callback method for the subscriber of the depth camera
+        """
+        # print("Depth callback!")
+        # if message.header.seq != self._last_depth_header:
+        #     self._last_depth_header = message.header.seq
+        try:
+            self._depth_msg[1] = message
+            # print(self._depth_msg.header.seq)
+        # else:
+        except:
+            rospy.logerr("Not receiving images")
+
+    def depth3Callback(self, message):
+        """
+        Callback method for the subscriber of the depth camera
+        """
+        # print("Depth callback!")
+        # if message.header.seq != self._last_depth_header:
+        #     self._last_depth_header = message.header.seq
+        try:
+            self._depth_msg[2] = message
+            # print(self._depth_msg.header.seq)
+        # else:
+        except:
+            rospy.logerr("Not receiving images")
+
+    def depth4Callback(self, message):
+        """
+        Callback method for the subscriber of the depth camera
+        """
+        # print("Depth callback!")
+        # if message.header.seq != self._last_depth_header:
+        #     self._last_depth_header = message.header.seq
+        try:
+            self._depth_msg[3] = message
+            # print(self._depth_msg.header.seq)
+        # else:
+        except:
+            rospy.logerr("Not receiving images")
 
     def takeDepth(self):
         """
@@ -314,25 +361,35 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                 rospy.logerr("ERROR!!")  # , ex)
         # The depth image is a single-channel float32 image
         # the values is the distance in mm in z axis
-        cv_image = self.bridge.imgmsg_to_cv2(depth_message, "passthrough")
-        # Crop the image to be 1080*1080, keeping the same centre of the original one
-        if self.crop_image is True:
-            if self.registered is True:
-                cv_image = cv_image[:, 419:1499]
-            else:
-                #  The original resolution is 424*512, crop it to 424*424
-                cv_image = cv_image[:, 43:467]
-        # cv_image[np.isnan(cv_image)] = 0 # TODO: faster method (they say 10x) than np.nan_to_num which does not work
-        cv_image = np.nan_to_num(cv_image)
-        # cv2.imwrite('/home/pulver/Desktop/img_original.png', cv_image)
-        cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
-        # Normalize the depth image to fall between 0 (black) and 1 (white)
-        cv_image_norm = cv_image_norm / 255.0
-        # cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
-        # Resize to the desired size
-        cv_image = cv2.resize(cv_image_norm, (self.img_cols, self.img_rows), interpolation=cv2.INTER_CUBIC)
-        depth_message =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1], 1)
-        return depth_message
+        stack_observation = np.zeros(shape=(self.img_rows, self.img_cols, self.num_cameras))
+        for i in range(self.num_cameras):
+            cv_image = self.bridge.imgmsg_to_cv2(depth_message, "passthrough")
+            # Crop the image to be 1080*1080, keeping the same centre of the original one
+            if self.crop_image is True:
+                if self.registered is True:
+                    cv_image = cv_image[:, 419:1499]
+                else:
+                    #  The original resolution is 424*512, crop it to 424*424
+                    cv_image = cv_image[:, 43:467]
+            # cv_image[np.isnan(cv_image)] = 0 # TODO: faster method (they say 10x) than np.nan_to_num which does not work
+            cv_image = np.nan_to_num(cv_image)
+            # cv2.imwrite('/home/pulver/Desktop/img_original.png', cv_image)
+            cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+            # Normalize the depth image to fall between 0 (black) and 1 (white)
+            # cv_image_norm = cv_image_norm / 255.0
+            # cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
+            # Resize to the desired size
+            cv_image = cv2.resize(cv_image_norm, (self.img_cols, self.img_rows), interpolation=cv2.INTER_CUBIC)
+            depth_message[i] =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1], 1)
+            stack_observation[:, :, i] = depth_message[i]
+            if i != 0:
+                depth_message[0] = np.append(depth_message[0], depth_message[i], axis=1)
+
+
+        if self.use_stack_observation is True:
+            return stack_observation
+        else:
+            return np.reshape(depth_message[0], newshape=(depth_message[0].shape[0], depth_message[0].shape[1], 1))
 
     def takeObservation(self):
         """
