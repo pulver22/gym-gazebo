@@ -9,31 +9,19 @@ logger = logging.getLogger(__name__)
 # Thorvald
 register(
     id='GazeboThorvaldCameraEnv-v0',
-    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldCameraCnnPPOEnv',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMonocularCamera',
     max_episode_steps=200
     # More arguments here
 )
 register(
     id='GazeboThorvaldCameraEnv-v1',
-    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldCameraCnnPPOEnvSlim',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMultiCamera',
     max_episode_steps=200
     # More arguments here
 )
 register(
-    id='GazeboThorvaldCameraEnv-v2',
-    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldCameraCnnPPOEnvSlimOld',
-    max_episode_steps=200
-    # More arguments here
-)
-register(
-    id='GazeboThorvaldMlpEnv-v0',
-    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMlpPPOEnv',
-    max_episode_steps=200
-    # More arguments here
-)
-register(
-    id='GazeboThorvaldMlpEnv-v1',
-    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldMlpPPOEnvSlim',
+    id='GazeboThorvaldLidarEnv-v0',
+    entry_point='gym_gazebo.envs.thorvald:GazeboThorvaldLidarEnv',
     max_episode_steps=200
     # More arguments here
 )
