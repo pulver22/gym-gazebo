@@ -66,7 +66,6 @@ def callback(_locals, _globals):
           mean_reward = np.mean(y[-100:])
           print(x[-1], 'timesteps')
           print("Best mean reward: {:.2f} - Last mean reward per episode: {:.2f}".format(best_mean_reward, mean_reward))
-
           # New best model, you could save the agent here
           if mean_reward > best_mean_reward:
               best_mean_reward = mean_reward
@@ -79,14 +78,17 @@ def callback(_locals, _globals):
 ###########################
 #         MODEL           #
 ###########################
+# GazeboThorvaldCameraEnv-v0: single camera
+# GazeboThorvaldCameraEnv-v1: multicameras
+# GazeboThorvaldLidarEnv-v0: lidar
 
-env = gym.make('GazeboThorvaldCameraEnv-v1')  # Camera + nav_info
-# env = gym.make('GazeboThorvaldMlpEnv-v1')  # Only nav_info
+env = gym.make('GazeboThorvaldCameraEnv-v1')
 
-directory="/home/pulver/Desktop/avoidance/depth/curriculum/run-3"
+directory="/home/pulver/Desktop/avoidance/greyscale/multicamera/stack/original/run-1"
+# directory="/home/pulver/Desktop/avoidance/greyscale/non-scaled/run-1"
 #directory="/home/pulver/Desktop/avoidance/1/depth/run-4"
 # directory="/home/pulver/Documents/Experiments/Avoidance/depth/"
-ckp_path = directory + "run-3.pkl"
+ckp_path = directory + "run-1.pkl"
 
 try:
     os.makedirs(directory)
@@ -96,17 +98,13 @@ except FileExistsError:
 env = Monitor(env, directory, allow_early_resets=True)
 env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
 
-num_timesteps = 200000
+num_timesteps = 100000
 test_episodes = 10
-# model = TRPO(policy=NavigationCnnPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
-# model = TRPO(policy=NavigationMlpPolicy, env=env, timesteps_per_batch=800, verbose=1, tensorboard_log=directory)
-# model = PPO1(NavigationCnnPolicy, env, verbose=1, timesteps_per_actorbatch=800,  tensorboard_log=directory)
 model = PPO2(NavigationCnnPolicy, env=env, n_steps=800, verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 # model = PPO2(NavigationCnnLstmPolicy, env=env, n_steps=20, nminibatches=1,  verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 seed = np.random.randint(low=0, high=5)
 seed = 0
 test = False
-# ckp_path = "/home/pulver/Desktop/ppo_thorvald/no_cos_norm/NAVCNN/300/PPO2_3/no_cos_norm_relu.pkl"
 ###########################
 #         LOGGER          #
 ###########################
@@ -132,6 +130,7 @@ timer_start = time.time()
 if test is False:
     print("====== TRAIN ======")
     print("Saving file in: ", directory)
+    print("Seed used: ", seed)
     # model_1.learn(total_timesteps=3e5, tb_log_name="999")
     model.learn(total_timesteps=num_timesteps, seed=seed, callback=callback)
     model.save(save_path=ckp_path)
