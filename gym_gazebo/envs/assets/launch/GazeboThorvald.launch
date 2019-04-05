@@ -13,12 +13,12 @@
     <!--Register depth with RGB -->
     <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" output="screen"/>
       <node pkg="nodelet" type="nodelet" name="thorvald_register_images" args="load depth_image_proc/register standalone_nodelet" output="screen">
-        <remap from="rgb/camera_info" to="/thorvald_ii/kinect2/hd/camera_info"/>
-        <remap from="depth/camera_info" to="/thorvald_ii/kinect2/sd/camera_info"/>
-        <remap from="depth/image_rect" to="/thorvald_ii/kinect2/sd/image_depth_rect"/>
+        <remap from="rgb/camera_info" to="/thorvald_ii/kinect2/1/hd/camera_info"/>
+        <remap from="depth/camera_info" to="/thorvald_ii/kinect2/1/sd/camera_info"/>
+        <remap from="depth/image_rect" to="/thorvald_ii/kinect2/1/sd/image_depth_rect"/>
         <param name="queue_size" type="int" value="5"/>
         <param name="use_rgb_timestamp" value="True"/>
-        <param name="fill_upsampling_holes" value="True"/>
+        <param name="fill_upsampling_holes" value="False"/>
 
       </node>
 </launch>

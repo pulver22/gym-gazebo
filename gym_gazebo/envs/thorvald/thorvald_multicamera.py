@@ -43,10 +43,11 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
         self.proximity_distance = 2.0
-        self.world_xy = [-3.0, 3.0, -3.0, 3.0]
+        self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
+        # self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
         # self.world_y = [-6.0, 6.0]
-        self.robot_xy = [-4.0, 4.0, -4.0, 4.0]
-        # self.robot_y = [-3.0, 3.0]
+        self.robot_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
+        # self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
         self.offset = 3.0
         self.max_distance = 15.0
         self.skip_time = 500000000  # expressed in nseconds
@@ -64,8 +65,9 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.use_stack_observation = True
         self.use_stack_memory = False
         self.use_curriculum = False
+        self.use_omnidirection = False
         self.curriculum_episode = 350
-        self.episodes_reset = 15
+        self.episodes_reset = 10
         self.counter_barrier = 0  # Counted in the first episode
         # Camera setting
         self.crop_image = False
@@ -103,6 +105,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # print("use_stack_memory: ", self.use_stack_memory)
         print("Observation shape: ", np.shape(self.obs))
         print("use_curriculum: ", self.use_curriculum)
+        print("use_omnidirectional: ", self.use_omnidirection)
         print("=======================")
 
 
@@ -141,10 +144,12 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         ##########################
         ##     ACTION SPACE     ##
         ##########################
-        # self.velocity_low = np.array([-0.3, -0.3, -0.2], dtype=np.float32)
-        # self.velocity_high = np.array([0.3, 0.3, 0.2], dtype=np.float32)
-        self.velocity_low = np.array([0, -0.2], dtype=np.float32)
-        self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
+        if self.use_omnidirection is True:
+            self.velocity_low = np.array([-0.3, -0.3, -0.2], dtype=np.float32)
+            self.velocity_high = np.array([0.3, 0.3, 0.2], dtype=np.float32)
+        else:
+            self.velocity_low = np.array([0, -0.2], dtype=np.float32)
+            self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
         self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
 
 
@@ -478,6 +483,10 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
             - action
             - observation
         """
+
+        if self.iterator == 0:
+            print("====== New episode: {} [{}] ======".format(self.episodes_counter, self.steps_counter))
+        # Increase number of steps per episode
         self.iterator += 1
 
 
@@ -503,7 +512,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                 print("/gazebo/unpause_physics service call failed")
 
         # start = rospy.get_rostime()
-        self.vel_pub.publish(self.nav_utils.getVelocityMessage(action))
+        self.vel_pub.publish(self.nav_utils.getVelocityMessage(action, self.use_omnidirection))
         rospy.sleep(rospy.Duration(0, self.skip_time))
         # stop = rospy.get_rostime()
         # print("SRostime: ", abs(stop.secs - start.secs))
@@ -530,7 +539,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                     last_ob = self.takeObservation()
             except:
                 # When problems arise acquiring the observation, send null velocity to not make the robot move
-                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0,0]))
+                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0,0, 0], self.use_omnidirection))
                 rospy.logerr("Problems acquiring the observation")
 
         if self.use_depth is True:
@@ -540,7 +549,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                     last_depth = self.takeDepth()
                 except:
                     # When problems arise acquiring the observation, send null velocity to not make the robot move
-                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
+                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0, 0], self.use_omnidirection))
                     # rospy.logerr("Problems acquiring the depth observation")
 
         # Calculate actual distance from robot
@@ -612,10 +621,10 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         #########################
         if self.done == False:
             self.reward = self.nav_utils.getReward(self.distance, self.robot_rel_orientation)
-            print(self.reward)
+            # print(self.reward)
             if self.collision_detection == True:
                 self.reward += self.nav_utils.getCollisionPenalty(self.last_collision)
-                print("     ", self.reward)
+                # print("     ", self.reward)
                 # Reset the last collision
                 self.last_collision = None
 
@@ -627,13 +636,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         #########################
         # If the reward is greater than zero, we are in proximity of the goal. So Done needs to be set to true
         if self.reward >= 0 or self.iterator == (self.max_episode_steps - 1) or self.reward <= self.tolerance_penalty:
-            self.done = True
-            self.pose_acceptable = False
-
-
-        # Printing info
-        if self.done == True:
-            # rospy.logwarn("Done: " + str(self.done))
+            # print("Iterator: ", self.iterator)
             print("Final distance to goal: ", self.distance)
             if self.reward >= 0:
                 rospy.logwarn(" -> The robot reached its target.")
@@ -641,6 +644,20 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                 rospy.logerr("  -> The robot crashed into a static obstacle.")
             else:
                 pass
+            self.done = True
+            self.pose_acceptable = False
+
+
+        # Printing info
+        # if self.done == True:
+        #     # rospy.logwarn("Done: " + str(self.done))
+        #     print("Final distance to goal: ", self.distance)
+        #     if self.reward >= 0:
+        #         rospy.logwarn(" -> The robot reached its target.")
+        #     elif self.reward <= self.tolerance_penalty:
+        #         rospy.logerr("  -> The robot crashed into a static obstacle.")
+        #     else:
+        #         pass
 
         # self.time_stop = float(time.time())
         # self.rospy_time_stop = rospy.get_rostime()
@@ -652,7 +669,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
-        print("====== New episode: {} [{}] ======".format(self.episodes_counter, self.steps_counter))
+        # print("====== New episode: {} [{}] ======".format(self.episodes_counter, self.steps_counter))
         # In the fist episodes, just collect all the rewards
         if self.episodes_counter < self.episode_average_return:
             self.last_episodes_reward[self.episodes_counter] = self.episode_return
@@ -810,7 +827,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
             except:
 
                 # When problems arise acquiring the observation, send null velocity to not make the robot move
-                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
+                self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0, 0], self.use_omnidirection))
                 rospy.logerr("Problems acquiring the observation")
 
         # print("Shape: ", np.shape(last_ob))
@@ -827,7 +844,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                     last_depth = self.takeDepth()
                 except:
                     # When problems arise acquiring the observation, send null velocity to not make the robot move
-                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0]))
+                    self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0, 0], self.use_omnidirection))
                     # rospy.logerr("Problems acquiring the depth observation")
 
 

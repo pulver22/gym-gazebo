@@ -27,11 +27,7 @@ from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack, SubprocV
 from stable_baselines.common.policies import CnnPolicy, NavigationCnnPolicy, FeedForwardPolicy, NavigationMlpPolicy, NavigationCnnLstmPolicy
 from stable_baselines.bench import Monitor
 from stable_baselines.results_plotter import load_results, ts2xy
-
 from stable_baselines.a2c.utils import conv, linear, conv_to_fc
-# def policy_cnn(name, env):
-#     return CnnPolicy(name=name, ob_space=env.observation_space, ac_space=env.action_space, feature_extraction="navigation_cnn")
-# if __name__ == '__main__':
 
 
 
@@ -57,6 +53,7 @@ def callback(_locals, _globals):
   :param _locals: (dict)
   :param _globals: (dict)
   """
+  # TODO: The callback is not called, it may not work. MUST be fixed
   global n_steps, best_mean_reward
   # Print stats every 1000 calls
   if (n_steps + 1) % 1000 == 0:
@@ -82,13 +79,11 @@ def callback(_locals, _globals):
 # GazeboThorvaldCameraEnv-v1: multicameras
 # GazeboThorvaldLidarEnv-v0: lidar
 
-env = gym.make('GazeboThorvaldCameraEnv-v1')
+env = gym.make('GazeboThorvaldCameraEnv-v0')
 
-directory="/home/pulver/Desktop/avoidance/greyscale/multicamera/stack/original/run-1"
-# directory="/home/pulver/Desktop/avoidance/greyscale/non-scaled/run-1"
-#directory="/home/pulver/Desktop/avoidance/1/depth/run-4"
-# directory="/home/pulver/Documents/Experiments/Avoidance/depth/"
-ckp_path = directory + "run-1.pkl"
+directory="/home/pulver/Desktop/Experiments/Avoidance/depth/singlecamera/no_big_reward/run-4/"
+# directory="/tmp/ppo/"
+ckp_path = directory + "run-4.pkl"
 
 try:
     os.makedirs(directory)
@@ -99,7 +94,7 @@ env = Monitor(env, directory, allow_early_resets=True)
 env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
 
 num_timesteps = 100000
-test_episodes = 10
+test_episodes = 100
 model = PPO2(NavigationCnnPolicy, env=env, n_steps=800, verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 # model = PPO2(NavigationCnnLstmPolicy, env=env, n_steps=20, nminibatches=1,  verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 seed = np.random.randint(low=0, high=5)
@@ -147,25 +142,51 @@ else:
 ###########################
     print("====== TEST ======")
     # Load the trained agent
-    print("Loading ckp from: ", ckp_path)
-    model = PPO2.load(ckp_path, env, tensorboard_log=directory)
-    # Enjoy trained agent
-    success = 0
-    max_episode_steps = 200
+    ckp_path_list = ["run-1/run-1.pkl",
+                     "run-2/run-2.pkl",
+                     "run-3/run-3.pkl",
+                     "run-4/run-4.pkl"]
+    ckp_results = [None] * len(ckp_path_list)
+    ckp_counter = 0
     obs = env.reset()
-    for episodes in range(test_episodes):
-        print("====== Episode: {}/{} ======".format(episodes+1, test_episodes))
-        for i in range(max_episode_steps):
-            action, _states = model.predict(obs)
-            obs, rewards, done, info = env.step(action)
-            rospy.sleep(0.5)
-            # print("D: {}, R: {}".format(done, rewards))
-            if done == True:
-                if rewards > 0:
-                    success += 1
-                break
-            # env.render()  # Not required when using Gazebo
-    print("Success rate: ", 100*(success / test_episodes), "%")
+    for ckp in ckp_path_list:
+        ckp_path = directory + ckp
+        print("------------------")
+        print("Loading ckp from: ", ckp_path)
+        print("------------------")
+        model = PPO2.load(ckp_path, env, tensorboard_log=directory)
+        # Enjoy trained agent
+        success = 0
+        max_episode_steps = 200
+        for episodes in range(test_episodes):
+            for step in range(max_episode_steps):
+                action, _states = model.predict(obs)
+                obs, rewards, done, info = env.step(action)
+                if done[0] == True:
+                    outcome = 0
+                    if rewards > 0:
+                        success += 1
+                        outcome = 1
+                    # print("Writing to log...")
+                    with open(directory + "New_results_test_100.csv", "a") as myfile:
+                        string_to_add = ckp + "," + str(episodes) + "," + str(step) + "," + str(outcome) + "\n"
+                        myfile.write(string_to_add)
+                    # NB: VecEnv reset the environment automatically when done is True
+                    break
+                # env.render()  # Not required when using Gazebo
+        ckp_results[ckp_counter] = success / test_episodes
+        ckp_counter += 1
+    # Print ckp and respective success rate
+    print("------------------")
+    print("Success rate")
+    for i in range(len(ckp_path_list)):
+        print("{}:{}".format(ckp_path_list[i], ckp_results[i]))
+        with open(directory + "New_success_rate_100.txt", "a") as myfile:
+            string_to_add = str(ckp_path_list[i]) + ":" + str(ckp_results[i]) + "\n"
+            myfile.write(string_to_add)
+    print("------------------")
+
+
 timer_stop = time.time()
 sec = timer_stop - timer_start
 print("=======================")

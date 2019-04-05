@@ -61,7 +61,7 @@ class NavigationUtilities():
 
         return random_pose
 
-    def getVelocityMessage(self, action):
+    def getVelocityMessage(self, action, omnidirectional):
         """
         Helper function.
         Wraps an action vector into a Twist message.
@@ -69,9 +69,11 @@ class NavigationUtilities():
         # Set up a Twist message to publish.
         action_msg = Twist()
         action_msg.linear.x = action[0]
-        # action_msg.linear.y = action[1]
-        # action_msg.angular.z = action[2]
-        action_msg.angular.z = action[1]
+        if omnidirectional is True:
+            action_msg.linear.y = action[1]
+            action_msg.angular.z = action[2]
+        else:
+            action_msg.angular.z = action[1]
         return action_msg
 
     def getVelocityMessageDiscrete(self, action):
@@ -160,12 +162,13 @@ class NavigationUtilities():
         # angle_penalty = - robot_rel_orientation * (0.5/180.0)
         # print("     Angle_penalty:", angle_penalty)
         # if self.distance < self.proximity_distance:
-        if distance < self.acceptance_distance:
-            return self.positive_reward #+ angle_penalty
-        #   else:
-        #      return self.positive_reward * 0.01 - self.distance
-        else:
-            return - distance.astype(np.float32) * 0.1 #+ angle_penalty
+        # if distance < self.acceptance_distance:
+        #     return self.positive_reward #+ angle_penalty
+        # #   else:
+        # #      return self.positive_reward * 0.01 - self.distance
+        # else:
+        #     return - distance.astype(np.float32) * 0.1 #+ angle_penalty
+        return - distance.astype(np.float32) * 0.1
 
     def getBearingEuler(self, robot_abs_pose):
         """
