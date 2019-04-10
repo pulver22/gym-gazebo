@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 from functools import reduce
 
 
-folder ='/home/pulver/Dropbox/University/PostDoc/Experiments/Avoidance/depth/' + 'run-'
+folder ='/home/pulver/Desktop/Experiments/Avoidance/greyscale/singlecamera/fullobservability/run-'
 rolling_window = 3500
 
 #  https://pandas.pydata.org/pandas-docs/stable/user_guide/missing_data.html
 datas=[]
 df_final = pd.DataFrame()
 for i in range(1,5):
-    dataURI=folder+str(i)+'/monitor.csv'
+    dataURI=folder+str(i)+'/monitor-tb.csv'
     data= pd.read_csv(dataURI)
     data['experiment'] = str(i)
     data.set_index('Step', inplace=True)

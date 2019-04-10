@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-results = pu.load_results('/home/pulver/Desktop/avoidance/1/greyscale',
+results = pu.load_results('/home/pulver/Desktop/Experiments/Avoidance/depth/singlecamera/no_big_reward',
                           enable_progress=False,
                           verbose=True)
 

@@ -162,13 +162,13 @@ class NavigationUtilities():
         # angle_penalty = - robot_rel_orientation * (0.5/180.0)
         # print("     Angle_penalty:", angle_penalty)
         # if self.distance < self.proximity_distance:
-        # if distance < self.acceptance_distance:
-        #     return self.positive_reward #+ angle_penalty
-        # #   else:
-        # #      return self.positive_reward * 0.01 - self.distance
-        # else:
-        #     return - distance.astype(np.float32) * 0.1 #+ angle_penalty
-        return - distance.astype(np.float32) * 0.1
+        if distance < self.acceptance_distance:
+            return self.positive_reward #+ angle_penalty
+        #   else:
+        #      return self.positive_reward * 0.01 - self.distance
+        else:
+            return - distance.astype(np.float32) * 0.1 #+ angle_penalty
+        # return - distance.astype(np.float32) * 0.1
 
     def getBearingEuler(self, robot_abs_pose):
         """
@@ -282,7 +282,8 @@ class NavigationUtilities():
                 penalty = 0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2))
             # Send a big penalty if the robot is colliding with the orang walls
             if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
-                penalty = 5.0
+                # penalty = 5.0 #  original
+                penalty = 50.0
             # print("         Penalty: ", penalty)
         return -penalty
 

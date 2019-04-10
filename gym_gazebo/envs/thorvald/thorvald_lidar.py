@@ -92,8 +92,9 @@ class GazeboThorvaldLidarEnv(gazebo_env.GazeboEnv):
             self.velocity_high = np.array([0.3, 0.3, 0.2], dtype=np.float32)
             self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
 
-        # Lidar setting
-        self.min_range = 0.5
+        # Lidar setting (Values defines in the urdf)
+        self.min_lidar_range = 0.1
+        self.max_lidar_range = 30.0
 
         # Observation space
         # self.observation_high = np.array([1.0, 1.0, 1.0], dtype=np.float32)
@@ -164,6 +165,9 @@ class GazeboThorvaldLidarEnv(gazebo_env.GazeboEnv):
         if message.header.seq != self._last_lidar_header:
             self._last_lidar_header = message.header.seq
             self._lidar_msg =  np.array(message.ranges)
+            self._lidar_msg = np.nan_to_num(self._lidar_msg)
+            self._lidar_msg[self._lidar_msg == np.inf] = self.max_lidar_range
+            self._lidar_msg = self._lidar_msg/self.max_lidar_range
         else:
             rospy.logerr("Not receiving lidar readings")
 

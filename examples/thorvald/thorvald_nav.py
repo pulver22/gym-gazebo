@@ -81,9 +81,10 @@ def callback(_locals, _globals):
 
 env = gym.make('GazeboThorvaldCameraEnv-v0')
 
-directory="/home/pulver/Desktop/Experiments/Avoidance/depth/singlecamera/no_big_reward/run-4/"
+seed = 3
+directory="/media/pulver/PulverHDD/Experiments/Avoidance/depth/singlecamera/twolidars/run-" + str(seed) +"/"
 # directory="/tmp/ppo/"
-ckp_path = directory + "run-4.pkl"
+ckp_path = directory + "run-" + str(seed) + ".pkl"
 
 try:
     os.makedirs(directory)
@@ -98,7 +99,7 @@ test_episodes = 100
 model = PPO2(NavigationCnnPolicy, env=env, n_steps=800, verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 # model = PPO2(NavigationCnnLstmPolicy, env=env, n_steps=20, nminibatches=1,  verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 seed = np.random.randint(low=0, high=5)
-seed = 0
+
 test = False
 ###########################
 #         LOGGER          #
@@ -145,7 +146,8 @@ else:
     ckp_path_list = ["run-1/run-1.pkl",
                      "run-2/run-2.pkl",
                      "run-3/run-3.pkl",
-                     "run-4/run-4.pkl"]
+                     "run-4/run-4.pkl",
+                     "run-5/run-5.pkl"]
     ckp_results = [None] * len(ckp_path_list)
     ckp_counter = 0
     obs = env.reset()
@@ -168,7 +170,7 @@ else:
                         success += 1
                         outcome = 1
                     # print("Writing to log...")
-                    with open(directory + "New_results_test_100.csv", "a") as myfile:
+                    with open(directory + "Results_test2_100.csv", "a") as myfile:
                         string_to_add = ckp + "," + str(episodes) + "," + str(step) + "," + str(outcome) + "\n"
                         myfile.write(string_to_add)
                     # NB: VecEnv reset the environment automatically when done is True
@@ -181,7 +183,7 @@ else:
     print("Success rate")
     for i in range(len(ckp_path_list)):
         print("{}:{}".format(ckp_path_list[i], ckp_results[i]))
-        with open(directory + "New_success_rate_100.txt", "a") as myfile:
+        with open(directory + "Success_rate2_100.txt", "a") as myfile:
             string_to_add = str(ckp_path_list[i]) + ":" + str(ckp_results[i]) + "\n"
             myfile.write(string_to_add)
     print("------------------")

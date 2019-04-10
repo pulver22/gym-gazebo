@@ -43,11 +43,11 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
         self.proximity_distance = 2.5
-        self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
-        # self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
+        # self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
+        self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
         # self.world_y = [-6.0, 6.0]
-        self.robot_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
-        # self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
+        # self.robot_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
+        self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
         # self.robot_y = [-3.0, 3.0]
         self.offset = 3.0
         self.max_distance = 15.0
@@ -108,13 +108,14 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
 
         self._observation_msg = None
         self._depth_msg = None
-        self._lidar_msg = None
+        self._lidar_msg = [None] * 2
         self._last_obs_header = None
         self._last_depth_header = None
         self._last_lidar_header = None
         self._last_contact_header = None
-        # Lidar setting
-        self.min_range = 0.5
+        # Lidar setting (Values defines in the urdf)
+        self.min_lidar_range = 0.1
+        self.max_lidar_range = 30.0
         # Goal_info needs to have same dimension  of images in order to be concatenated
         self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
         self.reward = 0
@@ -184,7 +185,8 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
             self.depth_sub = rospy.Subscriber('depth_registered/image_rect', Image, self.depthCallback )  # registered depth
         else:
             self.depth_sub = rospy.Subscriber('/thorvald_ii/kinect2/1/sd/image_depth_rect', Image, self.depthCallback)
-        # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
+        self.lidar1_sub = rospy.Subscriber('/scan_front', LaserScan, self.lidarFrontCallback)
+        self.lidar2_sub = rospy.Subscriber('/scan_back', LaserScan, self.lidarBackCallback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clockCallback)
         self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelStates, self.objects_callback)
         self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contactCallback)
@@ -308,15 +310,52 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         return obs_message
 
 
-    def lidarCallback(self, message):
+    def lidarFrontCallback(self, message):
         """
         Callback method for the subscriber of lidar
         """
-        if message.header.seq != self._last_lidar_header:
-            self._last_lidar_header = message.header.seq
-            self._lidar_msg =  np.array(message.ranges)
-        else:
-            rospy.logerr("Not receiving lidar readings")
+        # if message.header.seq != self._last_lidar_header:
+        #     self._last_lidar_header = message.header.seq
+        try:
+            self._lidar_msg[0] =  np.array(message.ranges)
+        # else:
+        except:
+            rospy.logerr("Not receiving front lidar readings")
+
+    def lidarBackCallback(self, message):
+        """
+        Callback method for the subscriber of lidar
+        """
+        # if message.header.seq != self._last_lidar_header:
+        #     self._last_lidar_header = message.header.seq
+        try:
+            self._lidar_msg[1] =  np.array(message.ranges)
+        # else:
+        except:
+            rospy.logerr("Not receiving back lidar readings")
+
+    def takeLidarObservation(self):
+        """
+        Get the Lidar sensor readings
+        """
+        obs_message = None
+        while obs_message == None:
+            try:
+                obs_message = self._lidar_msg
+            except:
+                rospy.logerr("Error while reading the LIDAR")
+
+        # Reshape to monodimensional array
+        obs_message = np.reshape(obs_message, newshape=(1, np.size(obs_message)))
+        # Remove all the nan, setting them to 0, and inf to big numbers
+        obs_message = np.nan_to_num(obs_message)
+        # Create a mask of where the lidar reading is too big
+        mask = obs_message[0,:] > self.max_lidar_range
+        # .. and set it to maximum value
+        obs_message[:, mask] = self.max_lidar_range
+        # Normalise the reading in [0,1]
+        obs_message = obs_message / self.max_lidar_range
+        return obs_message
 
     def contactCallback(self, message):
         """
@@ -444,6 +483,15 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # print("     ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
+
+        lidar_scan = np.copy(self.takeLidarObservation())
+        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+        # Subsample the readings
+        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+
+        # Update the navigation info with the lidar scan
+        self.goal_info[4:, :, :] = lidar_scan
 
         #
         if self.use_stack_memory is True and self.use_depth is False:
@@ -711,7 +759,13 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
-
+        lidar_scan = np.copy(self.takeLidarObservation())
+        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+        # Subsample the readings
+        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+        # Update the navigation info with the lidar scan
+        self.goal_info[4:, :, :] = lidar_scan
 
         # If you want to use only depth image
         if self.use_depth is True and self.use_combined_depth is False:
