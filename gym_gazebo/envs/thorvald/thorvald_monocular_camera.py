@@ -133,10 +133,12 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         ##########################
         ##     ACTION SPACE     ##
         ##########################
-        # self.velocity_low = np.array([-0.3, -0.3, -0.2], dtype=np.float32)
-        # self.velocity_high = np.array([0.3, 0.3, 0.2], dtype=np.float32)
-        self.velocity_low = np.array([0, -0.2], dtype=np.float32)
-        self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
+        if self.use_omnidirection is True:
+            self.velocity_low = np.array([-0.3, -0.3, -0.2], dtype=np.float32)
+            self.velocity_high = np.array([0.3, 0.3, 0.2], dtype=np.float32)
+        else:
+            self.velocity_low = np.array([0, -0.2], dtype=np.float32)
+            self.velocity_high = np.array([0.3, 0.2], dtype=np.float32)
         self.action_space = spaces.Box(self.velocity_low, self.velocity_high, dtype=np.float32)
 
 
@@ -541,17 +543,6 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
             self.done = True
             self.pose_acceptable = False
 
-
-        # Printing info
-        # if self.done == True:
-        #     # rospy.logwarn("Done: " + str(self.done))
-        #     print("Final distance to goal: ", self.distance)
-        #     if self.reward >= 0:
-        #         rospy.logwarn(" -> The robot reached its target.")
-        #     elif self.reward <= self.tolerance_penalty:
-        #         rospy.logerr("  -> The robot crashed into a static obstacle.")
-        #     else:
-        #         pass
 
         # self.time_stop = float(time.time())
         # self.rospy_time_stop = rospy.get_rostime()

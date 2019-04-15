@@ -59,18 +59,18 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
-        self.use_depth = False
+        self.use_depth = True
         self.registered = False
         self.use_combined_depth = False
         self.use_stack_observation = True
         self.use_stack_memory = False
         self.use_curriculum = False
-        self.use_omnidirection = False
+        self.use_omnidirection = True
         self.curriculum_episode = 350
-        self.episodes_reset = 10
+        self.episodes_reset = 15
         self.counter_barrier = 0  # Counted in the first episode
         # Camera setting
-        self.crop_image = False
+        self.crop_image = True
         self.img_rows = 84
         self.img_cols = 84
         self.obs_cols = self.img_cols
@@ -117,13 +117,14 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
 
         self._observation_msg = [None] * self.num_cameras
         self._depth_msg = [None] * self.num_cameras
-        self._lidar_msg = None
+        self._lidar_msg = [None] * 2
         self._last_obs_header = None
         self._last_depth_header = None
         self._last_lidar_header = None
         self._last_contact_header = None
         # Lidar setting
-        self.min_range = 0.5
+        self.min_lidar_range = 0.1
+        self.max_lidar_range = 30.0
         # Goal_info needs to have same dimension  of images in order to be concatenated
         if self.use_stack_observation is True:
             self.goal_info = np.zeros(shape=(self.img_rows, 1, self.num_cameras))
@@ -209,7 +210,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
             self.depth3_sub = rospy.Subscriber('/thorvald_ii/kinect2/3/sd/image_depth_rect', Image, self.depth3Callback)
             self.depth4_sub = rospy.Subscriber('/thorvald_ii/kinect2/4/sd/image_depth_rect', Image, self.depth4Callback)
 
-        # self.lidar_sub = rospy.Subscriber('/scan', LaserScan, self.lidar_callback)
+        self.lidar1_sub = rospy.Subscriber('/scan_front', LaserScan, self.lidarFrontCallback)
+        self.lidar2_sub = rospy.Subscriber('/scan_back', LaserScan, self.lidarBackCallback)
         self.clock_sub = rospy.Subscriber('/clock', Clock, self.clockCallback)
         self.objects_sub = rospy.Subscriber('/gazebo/model_states', ModelStates, self.objects_callback)
         self.collision_sub = rospy.Subscriber('/collision_data', ContactState, self.contactCallback)
@@ -360,15 +362,18 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         depth_message = None
         while depth_message is None:
             try:
-                depth_message = np.copy(self._depth_msg)
+                depth_message = np.array(self._depth_msg)
                 # print("depth_message: ", depth_message)
             except:  # CvBridgeError as ex:
                 rospy.logerr("ERROR!!")  # , ex)
+
+        if None in depth_message:
+            return None
         # The depth image is a single-channel float32 image
         # the values is the distance in mm in z axis
         stack_observation = np.zeros(shape=(self.img_rows, self.img_cols, self.num_cameras))
         for i in range(self.num_cameras):
-            cv_image = self.bridge.imgmsg_to_cv2(depth_message, "passthrough")
+            cv_image = self.bridge.imgmsg_to_cv2(depth_message[i], "passthrough")
             # Crop the image to be 1080*1080, keeping the same centre of the original one
             if self.crop_image is True:
                 if self.registered is True:
@@ -385,7 +390,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
             # cv2.imwrite('/home/pulver/Desktop/img_norm.png', cv_image_norm)
             # Resize to the desired size
             cv_image = cv2.resize(cv_image_norm, (self.img_cols, self.img_rows), interpolation=cv2.INTER_CUBIC)
-            depth_message[i] =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1], 1)
+            depth_message[i] =  cv_image.reshape(cv_image.shape[0], cv_image.shape[1])
             stack_observation[:, :, i] = depth_message[i]
             if i != 0:
                 depth_message[0] = np.append(depth_message[0], depth_message[i], axis=1)
@@ -404,7 +409,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # print("Camera Empty: ", obs_message)
         while obs_message is None:
             try:
-                obs_message = np.copy(self._observation_msg)
+                obs_message = np.array(self._observation_msg)
                 # obs_message = self._observation_msg
             except:# CvBridgeError as ex:
                 rospy.logerr ("ERROR!!")#, ex)
@@ -448,16 +453,52 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         #     final_obs = np.append(final_obs, obs_message[i], axis=1)
         # return final_obs
 
-
-    def lidarCallback(self, message):
+    def lidarFrontCallback(self, message):
         """
         Callback method for the subscriber of lidar
         """
-        if message.header.seq != self._last_lidar_header:
-            self._last_lidar_header = message.header.seq
-            self._lidar_msg =  np.array(message.ranges)
-        else:
-            rospy.logerr("Not receiving lidar readings")
+        # if message.header.seq != self._last_lidar_header:
+        #     self._last_lidar_header = message.header.seq
+        try:
+            self._lidar_msg[0] = np.array(message.ranges)
+        # else:
+        except:
+            rospy.logerr("Not receiving front lidar readings")
+
+    def lidarBackCallback(self, message):
+        """
+        Callback method for the subscriber of lidar
+        """
+        # if message.header.seq != self._last_lidar_header:
+        #     self._last_lidar_header = message.header.seq
+        try:
+            self._lidar_msg[1] = np.array(message.ranges)
+        # else:
+        except:
+            rospy.logerr("Not receiving back lidar readings")
+
+    def takeLidarObservation(self):
+        """
+        Get the Lidar sensor readings
+        """
+        obs_message = None
+        while obs_message == None:
+            try:
+                obs_message = self._lidar_msg
+            except:
+                rospy.logerr("Error while reading the LIDAR")
+
+        # Reshape to monodimensional array
+        obs_message = np.reshape(obs_message, newshape=(1, np.size(obs_message)))
+        # Remove all the nan, setting them to 0, and inf to big numbers
+        obs_message = np.nan_to_num(obs_message)
+        # Create a mask of where the lidar reading is too big
+        mask = obs_message[0, :] > self.max_lidar_range
+        # .. and set it to maximum value
+        obs_message[:, mask] = self.max_lidar_range
+        # Normalise the reading in [0,1]
+        obs_message = obs_message / self.max_lidar_range
+        return obs_message
 
     def contactCallback(self, message):
         """
@@ -587,7 +628,15 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
-        #
+        lidar_scan = np.copy(self.takeLidarObservation())
+        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+        # Subsample the readings
+        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+
+        # Update the navigation info with the lidar scan
+        self.goal_info[4:, :, :] = lidar_scan
+
         # if self.use_stack_memory is True and self.use_depth is False:
         if self.use_stack_memory is True:
             # TODO: modify to take care of stack of observation + depth
@@ -647,17 +696,6 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
             self.done = True
             self.pose_acceptable = False
 
-
-        # Printing info
-        # if self.done == True:
-        #     # rospy.logwarn("Done: " + str(self.done))
-        #     print("Final distance to goal: ", self.distance)
-        #     if self.reward >= 0:
-        #         rospy.logwarn(" -> The robot reached its target.")
-        #     elif self.reward <= self.tolerance_penalty:
-        #         rospy.logerr("  -> The robot crashed into a static obstacle.")
-        #     else:
-        #         pass
 
         # self.time_stop = float(time.time())
         # self.rospy_time_stop = rospy.get_rostime()
@@ -820,8 +858,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                 if self.fake_images == True:
                     last_ob = np.zeros(shape=(self.img_rows, self.img_cols, self.img_channels))  # DEBUG
                 else:
-                    # counter += 1
-                    # print(counter)
+                    counter += 1
+                    print(counter)
                     last_ob = self.takeObservation()
 
             except:
@@ -876,6 +914,14 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
+
+        lidar_scan = np.copy(self.takeLidarObservation())
+        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+        # Subsample the readings
+        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+        # Update the navigation info with the LIDAR scan
+        self.goal_info[4:, :, :] = lidar_scan
 
         # if self.use_stack_observation is True:
         #     tmp_list = [self.goal_info] * self.num_cameras
