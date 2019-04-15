@@ -650,6 +650,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # else:
         # last_ob = np.reshape(last_ob, newshape=(last_ob.shape[0], last_ob.shape[1], 1))
         self.obs = np.append(last_ob, self.goal_info, axis=1)
+        if self.use_depth is True:
+            self.obs = np.append(last_depth, self.goal_info, axis=1)
         # If you want to use only depth image
         # if self.use_depth is True and self.use_combined_depth is False:
         #     self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols + 1, self.img_channels))
@@ -930,6 +932,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         # last_ob = np.reshape(last_ob, newshape=(last_ob.shape[0], last_ob.shape[1], 1))
         # If you want to use only depth image
         self.obs = np.append(last_ob, self.goal_info, axis=1)
+        if self.use_depth is True:
+            self.obs = np.append(last_depth, self.goal_info, axis=1)
         # if self.use_depth is True and self.use_combined_depth is False:
         #     self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.obs_cols  + 1, self.img_channels))
         # else:
