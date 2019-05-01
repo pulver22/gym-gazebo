@@ -39,15 +39,15 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.max_episode_steps = 200  # limit the max episode step
         self.reward_range = (-1000.0, 200)
         self.penalization = - 200
-        self.positive_reward = 200
+        self.positive_reward = 0.0
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
-        self.proximity_distance = 2.0
+        self.proximity_distance = 0.0
         self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
-        # self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
+        #self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
         # self.world_y = [-6.0, 6.0]
         self.robot_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
-        # self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
+        #self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
         self.offset = 3.0
         self.max_distance = 15.0
         self.skip_time = 500000000  # expressed in nseconds
@@ -59,15 +59,15 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
-        self.use_depth = True
+        self.use_depth = False
         self.registered = False
         self.use_combined_depth = False
         self.use_stack_observation = True
         self.use_stack_memory = False
-        self.use_curriculum = False
+        self.use_curriculum = True
         self.use_omnidirection = True
         self.curriculum_episode = 350
-        self.episodes_reset = 15
+        self.episodes_reset = 2
         self.counter_barrier = 0  # Counted in the first episode
         # Camera setting
         self.crop_image = True
@@ -139,7 +139,7 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         self.moving_average_return = 0
         self.episode_average_return = 40
         self.curriculum_percentage = 0.7
-        self.last_episodes_reward = np.array([0] * self.episode_average_return)
+        self.last_episodes_reward = np.array([-200.0] * self.episode_average_return)
 
 
         ##########################
@@ -739,7 +739,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
         #     msg = rospy.wait_for_message("/collision_data", ContactState)
 
         # If using curriculum learning, add a new object once in a while
-        if self.use_curriculum is True and self.moving_average_return > (self.curriculum_percentage * self.positive_reward):
+        #if self.use_curriculum is True and self.moving_average_return > (self.curriculum_percentage * self.positive_reward):
+        if self.use_curriculum is True and self.moving_average_return > -25.0:  # TODO: check
             #self.resp = rospy.wait_for_service("gazebo/spawn_sdf_model")
             try:
                 item_name = "drc_practice_orange_jersey_barrier{}".format(self.counter_barrier)
@@ -761,7 +762,8 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                 print("New objects-world size: ", self.world_xy)
                 print("New robot-world size: ", self.robot_xy)
                 # Reset the array containing the latest reward to avoid to generate too many additional obstacles
-                self.last_episodes_reward = np.zeros(shape=np.shape(self.last_episodes_reward))
+                #self.last_episodes_reward = np.zeros(shape=np.shape(self.last_episodes_reward))
+                self.last_episodes_reward = np.array([-200.0] * self.episode_average_return)
             except (rospy.ServiceException) as e:
                 rospy.logerr("/gazebo/spawn_sdf_model service call failed")
 
@@ -816,7 +818,9 @@ class GazeboThorvaldMultiCamera(gazebo_env.GazeboEnv):
                                 tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                                             model_name=self.objects_list.name[i],
                                                                             world_size=self.world_xy)
+                                # print("tmp_pose: ", tmp_pose)
                                 self.pose_acceptable = self.nav_utils.checkPose(tmp_pose, self.objects_list)
+                                # print("Pose acceptable: ", self.pose_acceptable)
                             # if self.objects_list.name[i] != self.model_name:
                             #     self.initial_pose = tmp_pose
                             print("Set object pose!")

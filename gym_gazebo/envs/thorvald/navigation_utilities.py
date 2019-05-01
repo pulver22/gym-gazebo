@@ -15,6 +15,7 @@ class NavigationUtilities():
         self.proximity_distance = proximity_distance
         self.offset = offset
         self.positive_reward = positive_reward
+        self.previous_distance = 0.0
 
 
 
@@ -25,9 +26,20 @@ class NavigationUtilities():
         tmp_y = np.random.uniform(low=world_size[2], high=world_size[3])
         random_pose.pose.position.x = tmp_x
         random_pose.pose.position.y = tmp_y
-        random_pose.pose.position.z = 0.0
-        # print("Random position (X,Y)= (" + str(tmp_x) + "," + str(tmp_y)+ ")")
         yaw = np.random.uniform(low=0, high=360)
+        random_pose.pose.position.z = 0.0
+        if model_name == 'thorvald_ii':
+            random_pose.pose.position.x = -6.5
+            random_pose.pose.position.y = 0.0
+            yaw = 0.0
+        elif "barrier" in model_name:
+            random_pose.pose.position.x = -3.0
+            random_pose.pose.position.y = 0.0
+            yaw = 0.0
+        else:
+            pass
+
+        # print("Random position (X,Y)= (" + str(tmp_x) + "," + str(tmp_y)+ ")")
         # quaternion = quaternion_from_euler(roll=0, pitch=0, yaw=yaw)  # NOTE: Py3 does not support tf
         orientation = quaternion.from_euler_angles(0.0, 0.0, yaw)  # roll, pitch, yaw
         random_pose.pose.orientation.x = orientation.components[1]
@@ -152,7 +164,7 @@ class NavigationUtilities():
         # print("goal_distance", np.linalg.norm(goal_a - goal_b, axis=-1))
         return np.linalg.norm(position - target_position, axis=-1)
 
-    def getReward(self, distance, robot_rel_orientation):
+    def getReward(self, distance, action, robot_rel_orientation, robot_pose, goal_pose):
         """
         Calculate the reward as euclidean distance from robot to target
         :return:
@@ -162,13 +174,52 @@ class NavigationUtilities():
         # angle_penalty = - robot_rel_orientation * (0.5/180.0)
         # print("     Angle_penalty:", angle_penalty)
         # if self.distance < self.proximity_distance:
+        obstacle_pose = self.getRandomPosition(reference_frame='world', model_name='barrier',
+                                               world_size=[-4.0, 4.0, -4.0, 4.0])
+        obstacle_position = np.array((obstacle_pose.pose.position.x, obstacle_pose.pose.position.y, obstacle_pose.pose.position.z))
+        distance_to_obstacle = self.getGoalDistance(robot_abs_pose=robot_pose, target_position=obstacle_position)
+        distance_to_goal = self.getGoalDistance(robot_abs_pose=robot_pose, target_position=goal_pose)
+        # print("Obstacle pose: ", obstacle_pose)
+        # print("Distance-obstacle: ", distance_to_obstacle)
+        # print("Distance-target: ", distance_to_goal)
+
+
         if distance < self.acceptance_distance:
             return self.positive_reward #+ angle_penalty
         #   else:
         #      return self.positive_reward * 0.01 - self.distance
         else:
-            return - distance.astype(np.float32) * 0.1 #+ angle_penalty
-        # return - distance.astype(np.float32) * 0.1
+            reward = - distance.astype(np.float32) * 0.1  # original
+            # reward = - distance.astype(np.float32) * 0.1 - 0.1* (distance - self.previous_distance) # diff distance
+            # reward = - 1/distance_to_goal - 1/distance_to_obstacle - 0.1* (distance - self.previous_distance)  # rl_ap
+            # reward = - 1.0* (distance - self.previous_distance) / distance_to_goal - 1.0 / distance_to_obstacle   # rl_ap_adaptive
+            # reward = 0.1 * (- distance + distance_to_obstacle)
+            self.previous_distance = distance
+
+            # Ref: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=1526924
+            if np.argmax(action) == 0:
+                reward = 0.02
+            elif np.argmax(action) == 1:
+                reward = -0.01
+            return reward
+
+    def getCollisionPenalty(self, last_collision):
+        """
+        Check for collision and penalise them
+        :return:
+        """
+        penalty = 0.0
+        if last_collision != None:
+            # print("     Collision between: %s and %s " %(last_collision.collision1_name, last_collision.collision2_name ))
+            for wrench in last_collision.wrenches:
+                # penalty += min(0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2)), 1)
+                penalty = 0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2))
+            # Send a big penalty if the robot is colliding with the orang walls
+            if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
+                # penalty = 5.0 #  original
+                penalty = 50.0
+            # print("         Penalty: ", penalty)
+        return -penalty
 
     def getBearingEuler(self, robot_abs_pose):
         """
@@ -269,32 +320,15 @@ class NavigationUtilities():
         """
         return (value - min)/(max - min)
 
-    def getCollisionPenalty(self, last_collision):
-        """
-        Check for collision and penalise them
-        :return:
-        """
-        penalty = 0.0
-        if last_collision != None:
-            # print("     Collision between: %s and %s " %(last_collision.collision1_name, last_collision.collision2_name ))
-            for wrench in last_collision.wrenches:
-                # penalty += min(0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2)), 1)
-                penalty = 0.01 * math.sqrt(pow(wrench.force.x,2) + pow(wrench.force.y,2) + pow(wrench.force.z,2))
-            # Send a big penalty if the robot is colliding with the orang walls
-            if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
-                # penalty = 5.0 #  original
-                penalty = 50.0
-            # print("         Penalty: ", penalty)
-        return -penalty
 
     def checkPose(self, robot_pose, objects_msg):
         """
         Check if the robot is within an object
         :return:
         """
-
+        # print("Object list: ", objects_msg.name)
         for i in range(0, len(objects_msg.name)):
-            print("Checking pose ", (i+1), "of", len(objects_msg.name))
+            print("Checking pose ", (i + 1), "of", len(objects_msg.name))
             if (objects_msg.pose[i].position.x - self.proximity_distance < robot_pose.pose.position.x < objects_msg.pose[i].position.x + self.proximity_distance):
                 if (objects_msg.pose[i].position.y - self.proximity_distance < robot_pose.pose.position.y < objects_msg.pose[i].position.y + self.proximity_distance):
                     return False

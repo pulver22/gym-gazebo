@@ -42,7 +42,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.positive_reward = 200
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
-        self.proximity_distance = 2.5
+        self.proximity_distance = 0.0
         # self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
         self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
         # self.world_y = [-6.0, 6.0]
@@ -60,7 +60,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
-        self.use_depth = True
+        self.use_depth = False
         self.registered = False
         self.use_combined_depth = False
         self.use_stack_memory = False
@@ -69,6 +69,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.curriculum_episode = 350
         self.episodes_reset = 15
         self.counter_barrier = 0  # Counted in the first episode
+        self.use_lidar_combined = False
         # Camera setting
         self.crop_image = True
         self.img_rows = 84
@@ -97,6 +98,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         print("Observation shape: ", np.shape(self.obs))
         print("use_curriculum: ", self.use_curriculum)
         print("use_omnidirectional: ", self.use_omnidirection)
+        print("use_lidar_combined: ", self.use_lidar_combined)
         print("=======================")
 
 
@@ -486,14 +488,14 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
 
-        lidar_scan = np.copy(self.takeLidarObservation())
-        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
-        # Subsample the readings
-        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
-        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
-
-        # Update the navigation info with the lidar scan
-        self.goal_info[4:, :, :] = lidar_scan
+        if self.use_lidar_combined is True:
+            lidar_scan = np.copy(self.takeLidarObservation())
+            lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+            # Subsample the readings
+            lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+            lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+            # Update the navigation info with the lidar scan
+            self.goal_info[4:, :, :] = lidar_scan
 
         #
         if self.use_stack_memory is True and self.use_depth is False:
@@ -517,7 +519,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         ##        REWARD       ##
         #########################
         if self.done == False:
-            self.reward = self.nav_utils.getReward(self.distance, self.robot_rel_orientation)
+            self.reward = self.nav_utils.getReward(self.distance, action, self.robot_rel_orientation, self.robot_abs_pose, self.target_position)
             # print(self.reward)
             if self.collision_detection == True:
                 self.reward += self.nav_utils.getCollisionPenalty(self.last_collision)
@@ -532,9 +534,9 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         ##         DONE        ##
         #########################
         # If the reward is greater than zero, we are in proximity of the goal. So Done needs to be set to true
-        if self.reward >= 0 or self.iterator == (self.max_episode_steps - 1) or self.reward <= self.tolerance_penalty:
+        if self.reward >= 100 or self.iterator == (self.max_episode_steps - 1) or self.reward <= self.tolerance_penalty:
             print("Final distance to goal: ", self.distance)
-            if self.reward >= 0:
+            if self.reward >= 100:
                 rospy.logwarn(" -> The robot reached its target.")
             elif self.reward <= self.tolerance_penalty:
                 rospy.logerr("  -> The robot crashed into a static obstacle.")
@@ -750,13 +752,14 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
         # Append the goal information (distance and bearing) to the observation space
         # last_ob = np.append(last_ob, self.goal_info, axis=1)
-        lidar_scan = np.copy(self.takeLidarObservation())
-        lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
-        # Subsample the readings
-        lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
-        lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
-        # Update the navigation info with the lidar scan
-        self.goal_info[4:, :, :] = lidar_scan
+        if self.use_lidar_combined == True:
+            lidar_scan = np.copy(self.takeLidarObservation())
+            lidar_scan = np.reshape(lidar_scan, newshape=np.size(lidar_scan))
+            # Subsample the readings
+            lidar_scan = lidar_scan[0:-1:18]  # The result is an array with 80 elements (given the original one of 1440)
+            lidar_scan = np.reshape(lidar_scan, newshape=(np.size(lidar_scan), 1, 1))
+            # Update the navigation info with the lidar scan
+            self.goal_info[4:, :, :] = lidar_scan
 
         # If you want to use only depth image
         if self.use_depth is True and self.use_combined_depth is False:
