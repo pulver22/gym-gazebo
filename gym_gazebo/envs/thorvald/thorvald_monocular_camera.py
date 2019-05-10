@@ -19,7 +19,7 @@ from gazebo_msgs.srv import SetModelState, GetModelState, SpawnModel
 from gazebo_msgs.msg import ModelState, ModelStates, ContactState
 from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
-from rospy_tutorials.msg import Floats, HeaderString
+# from rospy_tutorials.msg import Floats, HeaderString
 
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -43,11 +43,12 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.tolerance_penalty = -2.0
         self.acceptance_distance = 1.0
         self.proximity_distance = 0.0
-        # self.world_xy = [-3.0, 3.0, -3.0, 3.0]  # Train + test1
-        self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
+        self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
+        # self.world_xy = [-4.0, 4.0, -4.0, 4.0]  # Test2
         # self.world_y = [-6.0, 6.0]
         # self.robot_xy = [-4.0, 4.0, -4.0, 4.0]  # Train + test1
         self.robot_xy = [-6.0, 6.0, -6.0, 6.0]  # Test2
+        self.target_world = [-1.0, 1.0, -1.0, 1.0]
         # self.robot_y = [-3.0, 3.0]
         self.offset = 3.0
         self.max_distance = 15.0
@@ -66,10 +67,10 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.use_stack_memory = False
         self.use_omnidirection = False
         self.use_curriculum = False
-        self.curriculum_episode = 350
-        self.episodes_reset = 15
+        self.curriculum_episode = 2
+        self.episodes_reset = 1
         self.counter_barrier = 0  # Counted in the first episode
-        self.use_lidar_combined = False
+        self.use_lidar_combined = True
         # Camera setting
         self.crop_image = True
         self.img_rows = 84
@@ -80,6 +81,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         if self.use_combined_depth is True:
             self.img_channels += 1
         self.obs = np.zeros(shape=(self.img_rows, self.img_cols + 1, self.img_channels))
+        self.random_object = True
 
         # Launch the simulation with the given launchfile name
         gazebo_env.GazeboEnv.__init__(self, "GazeboThorvald.launch", self.collision_detection,
@@ -99,6 +101,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         print("use_curriculum: ", self.use_curriculum)
         print("use_omnidirectional: ", self.use_omnidirection)
         print("use_lidar_combined: ", self.use_lidar_combined)
+        print("use_random_object: ", self.random_object)
         print("=======================")
 
 
@@ -179,6 +182,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.nav_utils = NavigationUtilities(reference_frame=self.reference_frame, model_name=self.model_name,
                                              proximity_distance=self.proximity_distance, acceptance_distance=self.acceptance_distance,
                                              offset=self.offset, positive_reward=self.positive_reward)
+        self.object_to_remove = np.array(["ground_plane", self.model_name])
 
         ##########################
         ##          ROS         ##
@@ -231,10 +235,12 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         Callback method for the subscriber of the camera
         """
         # print("Image received")
-        if message.header.seq != self._last_obs_header:
-            self._last_obs_header = message.header.seq
+        # if message.header.seq != self._last_obs_header:
+        #     self._last_obs_header = message.header.seq
+        try:
             self._observation_msg = message
-        else:
+        # else:
+        except:
             rospy.logerr("Not receiving images")
 
 
@@ -297,6 +303,10 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
             except:# CvBridgeError as ex:
                 rospy.logerr ("ERROR!!")#, ex)
 
+        # if None in self._observation_msg:
+        #     return None
+        # print("----------")
+        # print(obs_message)
         # Convert from sensor_msgs::Image to cv::Mat
         cv_image = self.bridge.imgmsg_to_cv2(obs_message, "passthrough")
         # Convert the image to grayscale
@@ -343,9 +353,9 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         Get the Lidar sensor readings
         """
         obs_message = None
-        while obs_message == None:
+        while obs_message is None:
             try:
-                obs_message = self._lidar_msg
+                obs_message = np.array(self._lidar_msg)
             except:
                 rospy.logerr("Error while reading the LIDAR")
 
@@ -519,7 +529,8 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         ##        REWARD       ##
         #########################
         if self.done == False:
-            self.reward = self.nav_utils.getReward(self.distance, action, self.robot_rel_orientation, self.robot_abs_pose, self.target_position)
+            self.reward = self.nav_utils.getReward(self.distance, action, self.robot_rel_orientation,
+                                                   self.robot_abs_pose, self.target_position)
             # print(self.reward)
             if self.collision_detection == True:
                 self.reward += self.nav_utils.getCollisionPenalty(self.last_collision)
@@ -596,7 +607,8 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                 # NB: nav_utils.getRandomPosition() return a ModelState object, we need only the pose
                 item_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                              model_name=item_name,
-                                                             world_size=[-25.0, -50.0, -25.0, -30.0])
+                                                             world_size=[-25.0, -50.0, -25.0, -30.0],
+                                                             forbidden_world=self.target_world)
 
                 #Args: model_name model_xml robot_namespace initial_pose reference_frame
                 self.resp = self.spawn_model_proxy(item_name, item_xml, "", item_pose.pose, self.reference_frame)
@@ -633,8 +645,9 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                     else:
                         # For every object, find a new random position and check if it's available
                         tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
-                                                                     model_name=self.objects_list.name[i],
-                                                                     world_size=[-25.0, -50.0, -25.0, -30.0])
+                                                                    model_name=self.objects_list.name[i],
+                                                                    world_size=[-25.0, -50.0, -25.0, -30.0],
+                                                                    forbidden_world=self.target_world)
 
                         # In the first episode, count how many barriers are there
                         if self.episodes_counter == 0 and "barrier" in self.objects_list.name[i]:
@@ -643,38 +656,79 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                             self.resp = self.set_position_proxy(tmp_pose)
                         except (rospy.ServiceException) as e:
                             rospy.logerr("/gazebo/set_model_state service call failed")
+
+                # Remove the ground_plane and the robot from the list of objects
+                clean_object_list = np.setdiff1d(np.array(self.objects_list.name), self.object_to_remove)
+                print("Cleaned object list: ", clean_object_list)
+
                 print("Second, generate random position...")
-                for i in range(0, len(self.objects_list.name)):
-                    if self.objects_list.name[i] == "ground_plane":
-                        continue
-                    else:
-                        # For every object, find a new random position and check if it's available
-                        # print("Waiting for object list")
-                        self.objects_list = None
-                        while self.objects_list == None:
-                            #  Wait the callback updates the object list
-                            self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
-                        #     # print("Waiting for object list")
-                        #     pass
-                        self.pose_acceptable = False
-                        if self.objects_list.name[i] != self.model_name:
-                            while self.pose_acceptable == False:
-                                print("[{}] generating pose".format(self.objects_list.name[i]))
-                                tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
-                                                                            model_name=self.objects_list.name[i],
-                                                                            world_size=self.world_xy)
-                                self.pose_acceptable = self.nav_utils.checkPose(tmp_pose, self.objects_list)
-                            # if self.objects_list.name[i] != self.model_name:
-                            #     self.initial_pose = tmp_pose
-                            print("Set object pose!")
-                            try:
-                                self.resp = self.set_position_proxy(tmp_pose)
-                            except (rospy.ServiceException) as e:
-                                rospy.logerr("/gazebo/set_model_state service call failed")
+                print("Len object list: ", len(clean_object_list))
+                i = np.random.randint(low=0, high=len(clean_object_list))
+                print("i: ", i)
+                print("Object selected: ", clean_object_list[i])
+                if self.random_object is False:
+                    for i in range(0, len(self.objects_list.name)):
+                        if self.objects_list.name[i] == "ground_plane":
+                            pass
+                        else:
+                            # For every object, find a new random position and check if it's available
+                            # print("Waiting for object list")
+                            self.objects_list = None
+                            while self.objects_list == None:
+                                #  Wait the callback updates the object list
+                                self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                            #     # print("Waiting for object list")
+                            #     pass
+                            self.objects_list.name = np.setdiff1d(np.array(self.objects_list.name), self.object_to_remove)
+                            print("[2]Cleaned object list: ", self.objects_list.name)
+
+                            self.pose_acceptable = False
+                            if self.objects_list.name[i] != self.model_name:
+                                print("Object selected is: ", self.objects_list.name[i])
+                                while self.pose_acceptable == False:
+                                    print("[{}] generating pose".format(self.objects_list.name[i]))
+                                    # self.objects_list.name[i] = 'obstacle'
+                                    tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
+                                                                                model_name='obstacle',
+                                                                                world_size=self.world_xy,
+                                                                                forbidden_world=self.target_world)
+                                    tmp_pose.model_name = self.objects_list.name[i]
+                                    self.pose_acceptable = self.nav_utils.checkPose(tmp_pose, self.objects_list)
+                                # if self.objects_list.name[i] != self.model_name:
+                                #     self.initial_pose = tmp_pose
+                                print("Set object pose!")
+                                try:
+                                    self.resp = self.set_position_proxy(tmp_pose)
+                                except (rospy.ServiceException) as e:
+                                    rospy.logerr("/gazebo/set_model_state service call failed")
+                else:
+                    # Retrieve the updated position of all the objects in the scene
+                    self.objects_list = None
+                    while self.objects_list == None:
+                        #  Wait the callback updates the object list
+                        self.objects_list = rospy.wait_for_message("/gazebo/model_states", ModelStates)
+                    #     # print("Waiting for object list")
+                    #     pass
+                    self.pose_acceptable = False
+                    while self.pose_acceptable == False:
+                        print("[{}] generating pose".format(clean_object_list[i]))
+                        # self.objects_list.name[i] = 'obstacle'
+                        tmp_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
+                                                                    model_name='obstacle',
+                                                                    world_size=self.world_xy,
+                                                                    forbidden_world=self.target_world)
+                        tmp_pose.model_name = clean_object_list[i]
+                        self.pose_acceptable = self.nav_utils.checkPose(tmp_pose, self.objects_list)
+                    print("Set object pose!")
+                    try:
+                        self.resp = self.set_position_proxy(tmp_pose)
+                    except (rospy.ServiceException) as e:
+                        rospy.logerr("/gazebo/set_model_state service call failed")
+
                         # rospy.sleep(2)
 
             # Reset robot pose at every episode
-            # print("Resetting robot position")
+            print("Resetting robot position")
 
             self.objects_list = None
             while self.objects_list == None:
@@ -687,7 +741,8 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                 # print("Selecting random pose")
                 self.initial_pose = self.nav_utils.getRandomPosition(reference_frame=self.reference_frame,
                                                                      model_name=self.model_name,
-                                                                     world_size=self.robot_xy)
+                                                                     world_size=self.robot_xy,
+                                                                     forbidden_world=self.world_xy)
                 self.pose_acceptable = self.nav_utils.checkPose(self.initial_pose, self.objects_list)
             try:
                 print("Assign new pose to robot!")

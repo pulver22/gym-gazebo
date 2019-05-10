@@ -19,11 +19,25 @@ class NavigationUtilities():
 
 
 
-    def getRandomPosition(self, reference_frame, model_name, world_size):
+    def getRandomPosition(self, reference_frame, model_name, world_size, forbidden_world):
+        """
+        Generate a random position for a given model inside a give world
+        :param reference_frame: the frame to witch attach the model
+        :param model_name: the name of the model
+        :param world_size: [X_min, X_max, Y_min, Y_max]
+        :return: the pose
+        """
         random_pose = ModelState()
 
+        # Generate coordinates outside the target area
         tmp_x = np.random.uniform(low=world_size[0], high=world_size[1])
+        while forbidden_world[0] < tmp_x < forbidden_world[1]:
+            tmp_x = np.random.uniform(low=world_size[0], high=world_size[1])
+
         tmp_y = np.random.uniform(low=world_size[2], high=world_size[3])
+        while forbidden_world[2] < tmp_y < forbidden_world[3]:
+            tmp_y = np.random.uniform(low=world_size[2], high=world_size[3])
+
         random_pose.pose.position.x = tmp_x
         random_pose.pose.position.y = tmp_y
         yaw = np.random.uniform(low=0, high=360)
@@ -32,10 +46,14 @@ class NavigationUtilities():
             random_pose.pose.position.x = -6.5
             random_pose.pose.position.y = 0.0
             yaw = 0.0
-        elif "barrier" in model_name:
+        # elif "barrier" in model_name or "cardboard" in model_name:
+        #     random_pose.pose.position.x = -3.0
+        #     random_pose.pose.position.y = 0.0
+        #     yaw = 0.0
+        elif model_name == 'obstacle':
             random_pose.pose.position.x = -3.0
-            random_pose.pose.position.y = 0.0
-            yaw = 0.0
+            random_pose.pose.position.y = np.random.uniform(low=-1.0, high=1.0)
+            # yaw = 0.0
         else:
             pass
 
@@ -175,7 +193,7 @@ class NavigationUtilities():
         # print("     Angle_penalty:", angle_penalty)
         # if self.distance < self.proximity_distance:
         obstacle_pose = self.getRandomPosition(reference_frame='world', model_name='barrier',
-                                               world_size=[-4.0, 4.0, -4.0, 4.0])
+                                               world_size=[-4.0, 4.0, -4.0, 4.0], forbidden_world=[-1.0, 1.0, -1.0, 1.0])
         obstacle_position = np.array((obstacle_pose.pose.position.x, obstacle_pose.pose.position.y, obstacle_pose.pose.position.z))
         distance_to_obstacle = self.getGoalDistance(robot_abs_pose=robot_pose, target_position=obstacle_position)
         distance_to_goal = self.getGoalDistance(robot_abs_pose=robot_pose, target_position=goal_pose)
@@ -218,6 +236,9 @@ class NavigationUtilities():
             if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
                 # penalty = 5.0 #  original
                 penalty = 50.0
+            # if "cardboard" in last_collision.collision1_name or "cardboard" in last_collision.collision2_name:
+            #     # penalty = 5.0 #  original
+            #     penalty = -5.0 # We are here preferring the collision
             # print("         Penalty: ", penalty)
         return -penalty
 

@@ -20,7 +20,7 @@ from gazebo_msgs.srv import SetModelState, GetModelState
 from gazebo_msgs.msg import ContactState
 from rosgraph_msgs.msg import Clock
 from rospy.numpy_msg import numpy_msg
-from rospy_tutorials.msg import Floats, HeaderString
+# from rospy_tutorials.msg import Floats, HeaderString
 
 from cv_bridge import CvBridge, CvBridgeError
 

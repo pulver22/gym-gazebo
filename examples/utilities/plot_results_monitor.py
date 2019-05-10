@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-results = pu.load_results('/home/pulver/Desktop/Experiments/Avoidance/depth/singlecamera/no_big_reward',
+results = pu.load_results('//media/pulver/PulverHDD/Experiments/Avoidance/depth/multicamera/stack/cropped/twolidars/curriculum/',
                           enable_progress=False,
                           verbose=True)
 

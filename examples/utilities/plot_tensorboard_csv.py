@@ -4,16 +4,17 @@ import matplotlib.pyplot as plt
 from functools import reduce
 
 
-folder ='/media/pulver/PulverHDD/Experiments/Avoidance/depth/singlecamera/twolidars/run-'
-rolling_window = 3500
+folder ='/media/pulver/PulverHDD/Experiments/Avoidance/depth/multicamera/stack/cropped/twolidars/curriculum/run-'
+rolling_window = 500
 
-index_to_print = [0,1,3,6,8]
+#index_to_print = [0,1,3,6,8]
 #  https://pandas.pydata.org/pandas-docs/stable/user_guide/missing_data.html
 datas=[]
 df_final = pd.DataFrame()
-# for i in range(0,9):
-for i in range(0, len(index_to_print)):
-    dataURI=folder+str(index_to_print[i])+'/monitor-tb.csv'
+for i in range(0,1):
+#for i in range(0, len(index_to_print)):
+    #dataURI=folder+str(index_to_print[i])+'/monitor-tb.csv'
+    dataURI=folder+str(i)+'/monitor-tb.csv'
     print("Data read from: ", dataURI)
     data= pd.read_csv(dataURI)
     data['experiment'] = str(i)
