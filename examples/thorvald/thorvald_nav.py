@@ -20,7 +20,24 @@ from stable_baselines.bench import Monitor
 from stable_baselines.results_plotter import load_results, ts2xy
 
 from gym_gazebo.utils.custom_networks import NavigationCnnPolicy
-best_mean_reward, n_steps = -np.inf, 5000
+
+
+###########################
+#          VARs           #
+###########################
+best_mean_reward, n_steps = -np.inf, 4999
+seed = 0
+# directory='/media/pulver/PulverHDD/Experiments/Avoidance/greyscale/singlecamera/fullobservability/singlebox/ref1/run-' + str(seed) +'/'
+# directory = '/media/pulver/PulverHDD/Experiments/Avoidance/rgb/singlecamera/fullobservability/combined/ref1/big_box/box_reward_0/alternate_20ep/run-' + str(seed) + '/'
+directory = '/media/pulver/PulverHDD/Experiments/Avoidance/rgb/singlecamera/fullobservability/combined/ref1/cilinder/cilinder_reward_0/alternate_10ep/5kg/fixed/run-' + str(seed) + '/'
+#seed = np.random.randint(low=0, high=8)
+# directory='/tmp/ppo/test/'
+ckp_path = directory + 'run-' + str(seed) + '.pkl'
+try:
+    os.makedirs(directory)
+    print('Directory ' , directory ,  ' created ')
+except FileExistsError:
+    pass
 
 
 #TODO: I believe this is not called
@@ -32,18 +49,18 @@ def callback(_locals, _globals):
   """
   global n_steps, best_mean_reward
   # Print stats every 1000 calls
-  if (n_steps + 1) % 1000 == 0:
+  if (n_steps + 1) % 5000 == 0:
       # Evaluate policy performance
       x, y = ts2xy(load_results(directory), 'timesteps')
       if len(x) > 0:
           mean_reward = np.mean(y[-100:])
           print(x[-1], 'timesteps')
-          print("Best mean reward: {:.2f} - Last mean reward per episode: {:.2f}".format(best_mean_reward, mean_reward))
+          print('Best mean reward: {:.2f} - Last mean reward per episode: {:.2f}'.format(best_mean_reward, mean_reward))
           # New best model, you could save the agent here
           if mean_reward > best_mean_reward:
               best_mean_reward = mean_reward
               # Example for saving best model
-              print("Saving new best model")
+              print('Saving new best model')
               _locals['self'].save(directory + 'best_model.pkl')
   n_steps += 1
   return True
@@ -56,18 +73,7 @@ def callback(_locals, _globals):
 # GazeboThorvaldLidarEnv-v0: lidar
 env = gym.make('GazeboThorvaldCameraEnv-v0')
 
-seed = 0
-# directory="/media/pulver/PulverHDD/Experiments/Avoidance/greyscale/singlecamera/fullobservability/singlebox/ref1/run-" + str(seed) +"/"
-directory = "/media/pulver/PulverHDD/Experiments/Avoidance/greyscale/singlecamera/fullobservability/combined/ref1/run-" + str(seed) +"/"
-#seed = np.random.randint(low=0, high=8)
-# directory="/tmp/ppo/"
-ckp_path = directory + "run-" + str(seed) + ".pkl"
 
-try:
-    os.makedirs(directory)
-    print("Directory " , directory ,  " created ")
-except FileExistsError:
-    pass
 env = Monitor(env, directory, allow_early_resets=True)
 env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environment to run
 
@@ -75,7 +81,7 @@ env = DummyVecEnv([lambda : env])  # The algorithm require a vectorized environm
 ###########################
 #          MODEL          #
 ###########################
-num_timesteps = 100000
+num_timesteps = 200000
 test_episodes = 30
 model = PPO2(NavigationCnnPolicy, env=env, n_steps=800, verbose=1, tensorboard_log=directory, full_tensorboard_log=True)
 
@@ -105,25 +111,27 @@ timer_start = time.time()
 #         TRAIN           #
 ###########################
 if test is False:
-    print("====== TRAIN ======")
+    print('====== TRAIN ======')
     if continual_learning is False:
-        print("Saving file in: ", directory)
-        print("Seed used: ", seed)
+        print('Saving file in: ', directory)
+        print('Seed used: ', seed)
         model.learn(total_timesteps=num_timesteps, seed=seed, callback=callback)
         model.save(save_path=ckp_path)
-        print("Saving")
+        print('Saving')
     else:
-        print("Loading ====>")
+        print('------------------')
+        print('Loading ckp from: ', ckp_path)
+        print('------------------')
         model = PPO2.load(ckp_path, env, tensorboard_log=directory)
         model.learn(total_timesteps=num_timesteps, seed=seed, callback=callback)
-        ckp_path = directory + "run-" + str(seed) + "2.pkl"
+        ckp_path = directory + 'run-' + str(seed) + '4.pkl'
         model.save(save_path=ckp_path)
-        print("Saving")
+        print('Saving')
 else:
 ###########################
 #         TEST           #
 ###########################
-    print("====== TEST ======")
+    print('====== TEST ======')
     # Load the trained agent
     ckp_path_list = ["run-02.pkl"]#,
                       # "run-0.pkl2",
@@ -139,9 +147,9 @@ else:
     obs = env.reset()
     for ckp in ckp_path_list:
         ckp_path = directory + ckp
-        print("------------------")
-        print("Loading ckp from: ", ckp_path)
-        print("------------------")
+        print('------------------')
+        print('Loading ckp from: ', ckp_path)
+        print('------------------')
         model = PPO2.load(ckp_path, env, tensorboard_log=directory)
         # Enjoy trained agent
         success = 0
@@ -155,9 +163,9 @@ else:
                     if rewards > 0:
                         success += 1
                         outcome = 1
-                    print("Writing to log...")
-                    with open(directory + "Results_test_twowalls.csv", "a") as myfile:
-                        string_to_add = ckp + "," + str(episodes) + "," + str(step) + "," + str(outcome) + "\n"
+                    print('Writing to log...')
+                    with open(directory + 'Results_test.csv', 'a') as myfile:
+                        string_to_add = ckp + ',' + str(episodes) + ',' + str(step) + ',' + str(outcome) + '\n'
                         myfile.write(string_to_add)
                     # NB: VecEnv reset the environment automatically when done is True
                     break
@@ -165,18 +173,18 @@ else:
         ckp_results[ckp_counter] = success / test_episodes
         ckp_counter += 1
     # Print ckp and respective success rate
-    print("------------------")
-    print("Success rate")
+    print('------------------')
+    print('Success rate')
     for i in range(len(ckp_path_list)):
-        print("{}:{}".format(ckp_path_list[i], ckp_results[i]))
-        with open(directory + "Success_rate_twowalls.txt", "a") as myfile:
-            string_to_add = str(ckp_path_list[i]) + ":" + str(ckp_results[i]) + "\n"
+        print('{}:{}'.format(ckp_path_list[i], ckp_results[i]))
+        with open(directory + 'Success_rate.txt', 'a') as myfile:
+            string_to_add = str(ckp_path_list[i]) + ':' + str(ckp_results[i]) + '\n'
             myfile.write(string_to_add)
-    print("------------------")
+    print('------------------')
 
 
 timer_stop = time.time()
 sec = timer_stop - timer_start
-print("=======================")
-print("Time simulation: {}s, {}m, {}h".format(sec, sec/60.0, sec/3600))
-print("=======================")
+print('=======================')
+print('Time simulation: {}s, {}m, {}h'.format(sec, sec/60.0, sec/3600))
+print('=======================')

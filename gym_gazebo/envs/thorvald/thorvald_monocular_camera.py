@@ -6,6 +6,7 @@ import time
 import numpy as np, quaternion
 import cv2
 import math
+import matplotlib
 
 from gym import utils, spaces
 from gym.utils import seeding
@@ -61,6 +62,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.collision_detection = True
         self.synch_mode = False #TODO: if set to True, the code doesn't continue because ROS is synch with gazebo
         self.reset_position = True
+        self.use_greyscale = False
         self.use_depth = False
         self.registered = False
         self.use_combined_depth = False
@@ -68,7 +70,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.use_omnidirection = False
         self.use_curriculum = False
         self.curriculum_episode = 2
-        self.episodes_reset = 1
+        self.episodes_reset = 10
         self.counter_barrier = 0  # Counted in the first episode
         self.use_lidar_combined = True
         # Camera setting
@@ -77,7 +79,10 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.img_cols = 84
         if self.crop_image is False:
             self.img_cols = int(1920 * self.img_rows / 1080)  # Assuming the original image is (1080*1920)
-        self.img_channels = 1
+        if self.use_greyscale is True:
+            self.img_channels = 1
+        else:
+            self.img_channels = 3
         if self.use_combined_depth is True:
             self.img_channels += 1
         self.obs = np.zeros(shape=(self.img_rows, self.img_cols + 1, self.img_channels))
@@ -93,6 +98,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         print("collision_detection: ", self.collision_detection)
         print("sych_mode: ", self.synch_mode)
         print("reset_position: ", self.reset_position)
+        print("use_greyscale: ", self.use_greyscale)
         print("use_depth: ", self.use_depth)
         print("use_combined_depth: ", self.use_combined_depth)
         print("use_stack_memory: ", self.use_stack_memory)
@@ -122,7 +128,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.min_lidar_range = 0.1
         self.max_lidar_range = 30.0
         # Goal_info needs to have same dimension  of images in order to be concatenated
-        self.goal_info = np.zeros(shape=(self.img_rows, 1, 1))
+        self.goal_info = np.zeros(shape=(self.img_rows, 1, self.img_channels))
         self.reward = 0
         self.done = False
         self.iterator = 0  # class variable that iterates to accounts for number of steps per episode
@@ -211,6 +217,8 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.rospy_time_stop = 0.0
         self.r = rospy.Rate(20)
         self.resp = None
+
+        self.object_to_select_first = True
 
 
     def objects_callback(self, message):
@@ -310,17 +318,31 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # Convert from sensor_msgs::Image to cv::Mat
         cv_image = self.bridge.imgmsg_to_cv2(obs_message, "passthrough")
         # Convert the image to grayscale
-        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+        if self.use_greyscale is True:
+            cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
         # Crop the image to be 1080*1080, keeping the same centre of the original one
         if self.crop_image is True:
             cv_image = cv_image[:, 419:1499]
-
         # Normalize the depth image to fall between 0 (black) and 1 (white)
         cv_image_norm = cv_image / 255.0
         # cv_image_norm = cv2.normalize(cv_image, cv_image, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         # Resize and reshape the image according to the network input size
         cv_image = cv2.resize(cv_image_norm, (self.img_rows, self.img_cols), interpolation=cv2.INTER_CUBIC)
-        obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
+        if self.use_greyscale is True:
+            obs_message = cv_image.reshape( cv_image.shape[0], cv_image.shape[1], 1)
+        else:
+            obs_message = cv_image
+
+        # img = np.zeros((np.shape(obs_message)[0], np.shape(obs_message)[0], np.shape(obs_message)[0]))
+        #
+        # print("Shape obs: ", np.shape(obs_message))
+        # img[:, :, 0] = obs_message[:,:,0]
+        # img[:, :, 1] = obs_message[:,:,1]
+        # img[:, :, 2] = obs_message[:,:,2]
+        # cv2.imwrite('/home/pulver/Desktop/color_img.jpg', img)
+        # matplotlib.image.imsave('/home/pulver/Desktop/color_img.png', obs_message.astype(np.uint8))
+        # cv2.imshow("image", obs_message);
+        # cv2.waitKey();
         return obs_message
 
 
@@ -466,7 +488,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # Calculate actual distance from robot
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
-        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
+        self.goal_info[0,:,:] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
 
         # Calculate the relative orientation of the robot to the goal
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
@@ -480,12 +502,12 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
-        self.goal_info[1] = self.robot_rel_orientation
+        self.goal_info[1,:,:] = self.robot_rel_orientation
         # print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
         # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-180.0, max=180.0)
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            self.goal_info[1,:,:] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2,:,:] = math.sin(self.robot_rel_orientation)
             # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
@@ -517,10 +539,15 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                 # self.obs[:,:,1] = self.obs[:,:,0]
 
         # If you want to use only depth image
-        if self.use_depth is True and self.use_combined_depth is False:
-            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
+        if self.use_greyscale is True:
+            if self.use_depth is True and self.use_combined_depth is False:
+                self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1),
+                                               newshape=(self.img_rows, self.img_cols + 1))
+            else:
+                self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1),
+                                               newshape=(self.img_rows, self.img_cols + 1))
         else:
-            self.obs[:,:,0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
+            self.obs = np.append(last_ob, self.goal_info, axis=1)
 
         if self.use_combined_depth is True:
             self.obs[:, :, -1] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
@@ -663,7 +690,9 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
 
                 print("Second, generate random position...")
                 print("Len object list: ", len(clean_object_list))
-                i = np.random.randint(low=0, high=len(clean_object_list))
+                # i = np.random.randint(low=0, high=len(clean_object_list))
+                i = int(not self.object_to_select_first)
+                self.object_to_select_first = not self.object_to_select_first
                 print("i: ", i)
                 print("Object selected: ", clean_object_list[i])
                 if self.random_object is False:
@@ -768,6 +797,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
                 self.vel_pub.publish(self.nav_utils.getVelocityMessage([0, 0], self.use_omnidirection))
                 # rospy.logerr("Problems acquiring the observation")
 
+        # print("Observation shape: ", np.shape(last_ob))
         if self.use_depth is True:
             last_depth = None
             while (last_depth is None):
@@ -784,7 +814,7 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         self.target_position = self.nav_utils.getRandomTargetPosition(self.initial_pose)
         self.robot_abs_pose = self.nav_utils.getRobotAbsPose()
         self.distance = self.nav_utils.getGoalDistance(self.robot_abs_pose, self.target_position)
-        self.goal_info[0] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
+        self.goal_info[0,:,:] = self.nav_utils.normalise(value=self.distance, min=0.0, max=self.max_distance)
         # print("Distance-Goal found!")
         self.euler_bearing = self.nav_utils.getBearingEuler(self.robot_abs_pose)
         # self.goal_info[1] = self.euler_bearing[1]  # assuming (R,Y, P)
@@ -792,12 +822,12 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
         # self.robot_rel_orientation = np.math.radians(self.nav_utils.getRobotRelOrientation(self.robot_target_abs_angle, self.euler_bearing[1]))
         self.robot_rel_orientation = self.nav_utils.getRobotRelOrientationAtan2(self.robot_target_abs_angle,
                                                                                 self.euler_bearing[1])
-        self.goal_info[1] = self.robot_rel_orientation
+        self.goal_info[1,:,:] = self.robot_rel_orientation
         # print("Orientation-Goal found!")
         # print("[", self.iterator, "]Angle: ", np.degrees(self.goal_info[1]))
         if self.use_cosine_sine == True:
-            self.goal_info[1] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
-            self.goal_info[2] = math.sin(self.robot_rel_orientation)
+            self.goal_info[1,:,:] = math.cos(self.robot_rel_orientation)  # angles must be expressed in radiants
+            self.goal_info[2,:,:] = math.sin(self.robot_rel_orientation)
             # print("     [distance, cosine, sine]: ", self.goal_info[0,:,:], self.goal_info[1,:,:], self.goal_info[2,:,:])
             # Normalise the sine and cosine
             # self.goal_info[1] = self.nav_utils.normalise(value=self.goal_info[1], min=-1.0, max=1.0)
@@ -817,10 +847,15 @@ class GazeboThorvaldMonocularCamera(gazebo_env.GazeboEnv):
             self.goal_info[4:, :, :] = lidar_scan
 
         # If you want to use only depth image
-        if self.use_depth is True and self.use_combined_depth is False:
-            self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
+        if self.use_greyscale is True:
+            if self.use_depth is True and self.use_combined_depth is False:
+                self.obs[:, :, 0] = np.reshape(np.append(last_depth, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
+            else:
+                self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
         else:
-            self.obs[:, :, 0] = np.reshape(np.append(last_ob, self.goal_info, axis=1), newshape=(self.img_rows, self.img_cols  + 1))
+            # print("Shape last_ob: ", np.shape(last_ob))
+            # print("Shape goal_info: ", np.shape(self.goal_info))
+            self.obs = np.append(last_ob, self.goal_info, axis=1)
 
         # TODO: modify to take care of stack of observation + depth
         if self.use_stack_memory is True and self.use_depth is False:

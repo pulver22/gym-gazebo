@@ -52,7 +52,7 @@ class NavigationUtilities():
         #     yaw = 0.0
         elif model_name == 'obstacle':
             random_pose.pose.position.x = -3.0
-            random_pose.pose.position.y = np.random.uniform(low=-1.0, high=1.0)
+            random_pose.pose.position.y = 0.0#np.random.uniform(low=-1.5, high=1.5)
             # yaw = 0.0
         else:
             pass
@@ -236,9 +236,12 @@ class NavigationUtilities():
             if "orange" in last_collision.collision1_name or "orange" in last_collision.collision2_name:
                 # penalty = 5.0 #  original
                 penalty = 50.0
-            # if "cardboard" in last_collision.collision1_name or "cardboard" in last_collision.collision2_name:
-            #     # penalty = 5.0 #  original
-            #     penalty = -5.0 # We are here preferring the collision
+            if "cardboard" in last_collision.collision1_name or "cardboard" in last_collision.collision2_name:
+                # penalty = 5.0 #  original
+                penalty = -0.0 # We are here preferring the collision
+            if "blue" in last_collision.collision1_name or "blue" in last_collision.collision2_name:
+                # penalty = 5.0 #  original
+                penalty = -0.0 # We are here preferring the collision
             # print("         Penalty: ", penalty)
         return -penalty
 
